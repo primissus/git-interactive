@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 )
@@ -41,9 +42,20 @@ func NewRunner(dir string) *Runner {
 // Run executes `git <args...>` and returns stdout, or an *Error carrying
 // stderr on failure.
 func (r *Runner) Run(ctx context.Context, args ...string) (string, error) {
+	return r.RunEnv(ctx, nil, args...)
+}
+
+// RunEnv is Run with extra environment variables (each "KEY=value") appended
+// to the process environment. It is how the sequencer-driven commands
+// (interactive rebase) inject GIT_SEQUENCE_EDITOR/GIT_EDITOR so git never
+// blocks on a real editor.
+func (r *Runner) RunEnv(ctx context.Context, env []string, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, "git", args...)
 	if r.Dir != "" {
 		cmd.Dir = r.Dir
+	}
+	if len(env) > 0 {
+		cmd.Env = append(os.Environ(), env...)
 	}
 
 	var stdout, stderr bytes.Buffer

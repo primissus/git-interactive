@@ -26,10 +26,10 @@ func TestFirstRef(t *testing.T) {
 }
 
 func TestPlural2(t *testing.T) {
-	if got := plural2("commit", 1); got != "1 commit" {
-		t.Errorf("plural2(commit, 1) = %q, want %q", got, "1 commit")
+	if got := plural2(1); got != "1 commit" {
+		t.Errorf("plural2(1) = %q, want %q", got, "1 commit")
 	}
-	if got := plural2("commit", 3); got != "3 commits" {
-		t.Errorf("plural2(commit, 3) = %q, want %q", got, "3 commits")
+	if got := plural2(3); got != "3 commits" {
+		t.Errorf("plural2(3) = %q, want %q", got, "3 commits")
 	}
 }

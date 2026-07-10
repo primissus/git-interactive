@@ -74,6 +74,24 @@
 - **Rejected:** writing the path to a fixed temp file — no benefit over stdout for this case, and adds a stale-file failure mode.
 - **Status:** current
 
+## 2026-07 · rebase driven by a generated todo, not `-i` in an editor (phase 7)
+- **Decision:** `rebase` builds the interactive-rebase todo itself and feeds it to `git rebase -i` via `GIT_SEQUENCE_EDITOR` (set to `cp -- <tempfile>`, which overwrites git's todo), with `GIT_EDITOR=true` so message-editing steps never open an editor. `reword` is expressed as `pick` + `exec git commit --amend -m <msg>` so the new message is captured in the planning view up front, not through a blocking editor at replay time.
+- **Why:** the whole point is to run the rebase from inside a Bubble Tea TUI, where launching the user's `$EDITOR` on git's todo (or on a squash/reword message) would fight the alt-screen and block. Generating the todo and neutralizing the editor keeps the entire rebase non-interactive from git's side; the TUI owns all the interaction.
+- **Rejected:** launching `git rebase -i` with the real editor (breaks inside the TUI); using `reword`/`squash` and driving git's message editor with a per-commit `GIT_EDITOR` helper script (fragile — has to map each editor invocation back to the right commit's message). `exec … --amend` sidesteps the message editor entirely.
+- **Status:** current
+
+## 2026-07 · rebase base selection (phase 7)
+- **Decision:** `PlanRebase` offers the commits ahead of the upstream fork-point (`merge-base HEAD @{upstream}`) when the branch has an upstream; otherwise it offers the most recent commits capped at 20, rebased onto the parent of the oldest (or `--root` when the oldest is a root commit).
+- **Why:** the upstream fork-point is the natural "your commits" set for the common feature-branch case. Without an upstream there's no principled fork-point, so a bounded recent window keeps the list useful and fast rather than listing all of history.
+- **Rejected:** always listing full history (slow, overwhelming) and requiring an explicit base argument (PROMPT.md frames rebase as per-commit operations on the current branch, not "rebase onto X").
+- **Status:** current
+
+## 2026-07 · one conflict component, composed not nested (phase 7)
+- **Decision:** the conflict-resolution component is a set of `tui.Operation`s (`fileResolutionOps` = take ours/theirs/both/$EDITOR, plus `continueSkipAbortOps`) parameterized by a `pathOf` row-extractor. `rebase` hosts them in a dedicated resolver `List` (`runConflictResolver`); `status` appends `fileResolutionOps` to its own list. Side labels come from `git.ResolveSides`, which inverts ours/theirs for rebase.
+- **Why:** PROMPT.md requires `rebase`, `status`, and the future `resolve-conflicts` to share one component. Since a `tea.Program` can't be nested inside a running `List` (see the commit/merge decision), the shareable unit is the operation set, not a whole sub-program — each host composes it into its own list. Resolving labels in `internal/git` keeps the inversion rule in one place.
+- **Rejected:** a standalone resolver program that `status` launches nested (unsupported); duplicating take-ours/theirs/both logic in status and rebase; showing raw "ours"/"theirs" (forbidden — inverted under rebase, see known-issues).
+- **Status:** current
+
 ## 2026-07 · branch "created" sort heuristic
 - **Decision:** the `branch` view's "created" sort uses the tip commit's author date (`%(authordate:unix)`), not committer date.
 - **Why:** git has no stored branch-creation timestamp. Author date survives rebase/amend (which rewrite committer date), and matches the common `git branch --sort=-creatordate` convention.

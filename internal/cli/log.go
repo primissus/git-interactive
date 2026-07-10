@@ -235,7 +235,7 @@ func buildLogOperations(ctx context.Context, r *git.Runner, full bool) []tui.Ope
 				if err := git.CherryPick(ctx, r, shas, c.Choice == "no-commit"); err != nil {
 					return tui.Status(err.Error())
 				}
-				return refreshWith("cherry-picked " + plural2("commit", len(commits)))
+				return refreshWith("cherry-picked " + plural2(len(commits)))
 			},
 		},
 		{
@@ -307,9 +307,10 @@ func firstRef(refs []string) (string, bool) {
 	return refs[0], true
 }
 
-func plural2(unit string, n int) string {
+// plural2 renders a commit count as "1 commit" / "N commits".
+func plural2(n int) string {
 	if n == 1 {
-		return "1 " + unit
+		return "1 commit"
 	}
-	return fmt.Sprintf("%d %ss", n, unit)
+	return fmt.Sprintf("%d commits", n)
 }

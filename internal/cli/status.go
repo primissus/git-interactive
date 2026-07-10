@@ -227,7 +227,13 @@ func buildStatusOperations(ctx context.Context, r *git.Runner) []tui.Operation {
 		},
 	}
 
+	// When an operation is stopped on conflicts, layer in the shared
+	// conflict-resolution component: per-file take ours/theirs/both/$EDITOR
+	// (labels resolved to branch/commit names) plus continue/abort. This is the
+	// same component the standalone `rebase` resolver uses (see conflict.go).
 	if state, err := git.DetectInProgress(ctx, r); err == nil && state != nil {
+		sides := git.ResolveSides(ctx, r, state)
+		ops = append(ops, fileResolutionOps(ctx, r, sides, statusConflictPath, refresh)...)
 		ops = append(ops,
 			tui.Operation{
 				Name: "continue " + string(state.Op), Scope: tui.ScopeList,
@@ -252,6 +258,16 @@ func buildStatusOperations(ctx context.Context, r *git.Runner) []tui.Operation {
 	}
 
 	return ops
+}
+
+// statusConflictPath resolves a status row to a conflicted file path for the
+// shared file-resolution operations, rejecting non-conflict rows.
+func statusConflictPath(items []tui.Item) (string, bool) {
+	s, ok := targetStatusEntry(items)
+	if !ok || !s.conflict {
+		return "", false
+	}
+	return s.e.Path, true
 }
 
 // fullyStaged reports whether a status XY code has no remaining unstaged
