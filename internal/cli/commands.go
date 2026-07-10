@@ -47,38 +47,6 @@ func newMergeCmd() *cobra.Command {
 	return cmd
 }
 
-func newStatusCmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:     "status",
-		Aliases: []string{"st"},
-		Short:   "Interactive status view",
-	}
-	attachCommonFlags(cmd)
-	cmd.RunE = stubRun("status")
-	return cmd
-}
-
-func newAddCmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "add",
-		Short: "Staging operations on the working tree",
-	}
-	attachCommonFlags(cmd)
-	cmd.RunE = stubRun("add")
-	return cmd
-}
-
-func newStashCmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:     "stash",
-		Aliases: []string{"sth"},
-		Short:   "Interactive list of stashes",
-	}
-	attachCommonFlags(cmd)
-	cmd.RunE = stubRun("stash")
-	return cmd
-}
-
 func newCommitCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "commit",

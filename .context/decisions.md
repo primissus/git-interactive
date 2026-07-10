@@ -38,6 +38,18 @@
 - **Rejected:** implementing literal branch-shaped delete/rename/pull/push against a commit's SHA — no sensible git operation backs them.
 - **Status:** current
 
+## 2026-07 · status's "Enter toggles stage" vs. the shared List's Enter
+- **Decision:** `status`'s stage/unstage toggle is bound to the `t` key and listed first in the item context menu, not bound directly to Enter.
+- **Why:** PROMPT.md specifies "Enter: toggle stage/unstage for the selected file", but phase 2's shared `internal/tui.List` always uses Enter to open the context menu — every other view (and the framework's own key-handling switch) depends on that invariant. Special-casing Enter for one view would break the "commands never reimplement interactions" rule from `.context/conventions.md`.
+- **Rejected:** overriding Enter's meaning per-view — would require plumbing a List-level "raw Enter" escape hatch that no other command needs, for a single-view convenience.
+- **Status:** current
+
+## 2026-07 · conflict-state interface (status ↔ future resolve-conflicts)
+- **Decision:** `internal/git.InProgressState` (detection via `DetectInProgress`, plus `Continue`/`Abort`) is the single conflict-state primitive; `status` (phase 5) only offers continue/abort, but the type carries no status-specific assumptions.
+- **Why:** PROMPT.md requires phase 5's conflict handling and the future `resolve-conflicts` command (Future section) to share their conflict-state design. Keeping detection and continue/abort in `internal/git`, independent of any TUI, means `resolve-conflicts` can reuse `DetectInProgress` directly and layer per-conflict resolution on top without status's code changing.
+- **Rejected:** detecting conflict state ad hoc inside `internal/cli/status.go` — would leave phase 7 re-deriving the same `.git`-directory marker-file logic.
+- **Status:** current
+
 ## 2026-07 · `squash` scope (phase 4)
 - **Decision:** `log`'s squash operation only squashes HEAD into its immediate parent (soft reset one commit back + amend); attempting it on any other commit returns a status message pointing at phase 7.
 - **Why:** squashing an arbitrary non-HEAD commit into its parent while preserving every commit above it requires rebase machinery, which is explicitly phase 7's scope (PROMPT.md → `rebase`). Building a one-off partial rebase here would duplicate that work non-reusably.

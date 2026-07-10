@@ -140,3 +140,56 @@ func parseUnmergedEntry(line string) StatusEntry {
 	}
 	return StatusEntry{Code: fields[1], Path: fields[10]}
 }
+
+// StageFile stages a path's working-tree changes (`git add`).
+func StageFile(ctx context.Context, r *Runner, path string) error {
+	_, err := r.Run(ctx, "add", "--", path)
+	return err
+}
+
+// UnstageFile removes a path from the index without touching the working
+// tree (`git restore --staged`).
+func UnstageFile(ctx context.Context, r *Runner, path string) error {
+	_, err := r.Run(ctx, "restore", "--staged", "--", path)
+	return err
+}
+
+// StageAll stages every changed path (`git add -A`).
+func StageAll(ctx context.Context, r *Runner) error {
+	_, err := r.Run(ctx, "add", "-A")
+	return err
+}
+
+// UnstageAll unstages every staged path.
+func UnstageAll(ctx context.Context, r *Runner) error {
+	_, err := r.Run(ctx, "restore", "--staged", ".")
+	return err
+}
+
+// DiscardFile reverts a tracked path's working-tree changes, or removes it if
+// untracked.
+func DiscardFile(ctx context.Context, r *Runner, path string, untracked bool) error {
+	if untracked {
+		_, err := r.Run(ctx, "clean", "-f", "--", path)
+		return err
+	}
+	_, err := r.Run(ctx, "restore", "--", path)
+	return err
+}
+
+// CleanUntracked removes every untracked file (`git clean -fd`).
+func CleanUntracked(ctx context.Context, r *Runner) error {
+	_, err := r.Run(ctx, "clean", "-fd")
+	return err
+}
+
+// DiffFile returns path's diff: the staged (index vs HEAD) diff when staged
+// is true, otherwise the working-tree (index vs disk) diff.
+func DiffFile(ctx context.Context, r *Runner, path string, staged bool) (string, error) {
+	args := []string{"diff"}
+	if staged {
+		args = append(args, "--cached")
+	}
+	args = append(args, "--", path)
+	return r.Run(ctx, args...)
+}

@@ -56,3 +56,48 @@ func parseStashes(out string) []Stash {
 	}
 	return stashes
 }
+
+// StashPush creates a new stash. When paths is non-empty, only those paths
+// are stashed (the per-file "stash the selected file" operation); an empty
+// paths stashes every change.
+func StashPush(ctx context.Context, r *Runner, message string, paths ...string) error {
+	args := []string{"stash", "push"}
+	if message != "" {
+		args = append(args, "-m", message)
+	}
+	if len(paths) > 0 {
+		args = append(args, "--")
+		args = append(args, paths...)
+	}
+	_, err := r.Run(ctx, args...)
+	return err
+}
+
+// StashApply applies ref without removing it from the stash list.
+func StashApply(ctx context.Context, r *Runner, ref string) error {
+	_, err := r.Run(ctx, "stash", "apply", ref)
+	return err
+}
+
+// StashPop applies ref and removes it from the stash list.
+func StashPop(ctx context.Context, r *Runner, ref string) error {
+	_, err := r.Run(ctx, "stash", "pop", ref)
+	return err
+}
+
+// StashDrop removes ref from the stash list without applying it.
+func StashDrop(ctx context.Context, r *Runner, ref string) error {
+	_, err := r.Run(ctx, "stash", "drop", ref)
+	return err
+}
+
+// StashClear removes every stash.
+func StashClear(ctx context.Context, r *Runner) error {
+	_, err := r.Run(ctx, "stash", "clear")
+	return err
+}
+
+// StashDiff returns ref's diff against the commit it was stashed from.
+func StashDiff(ctx context.Context, r *Runner, ref string) (string, error) {
+	return r.Run(ctx, "stash", "show", "-p", ref)
+}
