@@ -26,9 +26,23 @@
 - **Rejected:** —
 - **Status:** open
 
-## [Date] · Graph rendering approach
-- **Decision:** [PENDING: parse `git log --graph` vs render from parent data — decide in phase 4]
-- **Status:** open
+## 2026-07 · Graph rendering approach
+- **Decision:** parse `git log --graph --pretty=format:...`, using a sentinel control character (`\x02`) as the field-format's first byte so the ASCII graph glyphs (which git prepends to the format string on every commit line, and are the entire content of pure connector lines) can be split from the commit data by string index rather than re-deriving the graph from parent/child edges.
+- **Why:** git's own graph layout algorithm is exactly what users expect and is nontrivial to reimplement (merge/branch column packing); shelling out for it and parsing the text is far simpler than rendering from `Commit.Refs`/parent data ourselves.
+- **Rejected:** rendering the graph from parent-commit data in Go — would have to reimplement git's column-packing algorithm for no behavioral benefit.
+- **Status:** current
+
+## 2026-07 · `log`/`graph` operations scope
+- **Decision:** `log` and `graph` offer checkout (detached), copy-sha, cherry-pick, squash, reset, and a merge-into-current stub — not branch's delete/rename/pull/push, despite PLAN.md phrasing operations as "everything branch has, plus…".
+- **Why:** delete/rename/pull/push don't have a coherent meaning applied to a commit (as opposed to a branch); PROMPT.md's own operation list for `log` never actually lists them, only cherry-pick/squash/reset/merge as the commit-specific additions.
+- **Rejected:** implementing literal branch-shaped delete/rename/pull/push against a commit's SHA — no sensible git operation backs them.
+- **Status:** current
+
+## 2026-07 · `squash` scope (phase 4)
+- **Decision:** `log`'s squash operation only squashes HEAD into its immediate parent (soft reset one commit back + amend); attempting it on any other commit returns a status message pointing at phase 7.
+- **Why:** squashing an arbitrary non-HEAD commit into its parent while preserving every commit above it requires rebase machinery, which is explicitly phase 7's scope (PROMPT.md → `rebase`). Building a one-off partial rebase here would duplicate that work non-reusably.
+- **Rejected:** a general-purpose squash-any-commit implementation now — belongs in phase 7's reusable rebase engine.
+- **Status:** current
 
 ## 2026-07 · worktree "checkout" cd mechanism
 - **Decision:** the `checkout` operation quits the TUI and prints the selected worktree's path as the program's final stdout line; it does not attempt to change the parent shell's directory.

@@ -25,41 +25,6 @@ func attachCommonFlags(cmd *cobra.Command) {
 	registeredFlags[cmd] = registerCommonFlags(cmd)
 }
 
-func newGraphBranchCmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:     "graph-branch",
-		Aliases: []string{"grb"},
-		Short:   "Graph view of branches",
-	}
-	attachCommonFlags(cmd)
-	cmd.Flags().BoolP("not-all", "A", false, "use the current branch as base instead of all branches")
-	cmd.RunE = stubRun("graph-branch")
-	return cmd
-}
-
-func newLogCmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:     "log",
-		Aliases: []string{"lg"},
-		Short:   "Interactive commit list",
-	}
-	attachCommonFlags(cmd)
-	cmd.RunE = stubRun("log")
-	return cmd
-}
-
-func newGraphCmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:     "graph",
-		Aliases: []string{"gr"},
-		Short:   "Graph view of commits",
-	}
-	attachCommonFlags(cmd)
-	cmd.Flags().BoolP("not-all", "A", false, "use the current branch as base instead of all branches")
-	cmd.RunE = stubRun("graph")
-	return cmd
-}
-
 func newRebaseCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "rebase",
