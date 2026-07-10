@@ -3,7 +3,7 @@
 ## Style
 - Formatting: gofmt (`make fmt`)
 - Lint: golangci-lint (`make lint`)
-- Naming: standard Go. One file per command in `internal/cli` (`branch.go`, `worktree.go`…).
+- Naming: standard Go. One file per command in `internal/cli` (`branch.go`, `demo.go`…); the shared TUI splits by concern in `internal/tui` (`list.go`/`render.go`, `menu.go`, `confirm.go`, `input.go`, `table.go`, `operation.go`, `item.go`, `styles.go`).
 
 ## Patterns we DO use
 - Shell out to `git`; errors from git carry stderr content.
