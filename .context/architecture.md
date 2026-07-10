@@ -13,7 +13,6 @@
 - External services: none
 
 ## Folder map
-> [PENDING: no source yet — planned layout from phases/p1/PLAN.md]
 - `cmd/gint/` → main entry point
 - `internal/cli/` → Cobra commands
 - `internal/git/` → git exec wrapper + porcelain parsers

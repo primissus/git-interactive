@@ -3,7 +3,7 @@
 ## Style
 - Formatting: gofmt (`make fmt`)
 - Lint: golangci-lint (`make lint`)
-- Naming: standard Go; `[PENDING: file/package naming specifics once code exists]`
+- Naming: standard Go. One file per command in `internal/cli` (`branch.go`, `worktree.go`…).
 
 ## Patterns we DO use
 - Shell out to `git`; errors from git carry stderr content.
