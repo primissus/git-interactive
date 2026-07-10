@@ -68,6 +68,14 @@ type InputSpec struct {
 	Placeholder string
 	// Initial pre-fills the field (e.g. an existing name for rename).
 	Initial string
+	// AllowEmpty lets a blank submission through (for genuinely optional inputs
+	// like a stash message or lock reason). By default an empty field cannot be
+	// submitted, so required inputs need no extra guard.
+	AllowEmpty bool
+	// Validate, when non-nil, checks the trimmed value on submit. A non-nil
+	// error keeps the prompt open and shows the message; nil accepts the value.
+	// It is not called for a blank AllowEmpty submission.
+	Validate func(string) error
 }
 
 // statusMsg sets the List's footer status line. Emit it from an Operation.Run

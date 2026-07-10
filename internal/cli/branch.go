@@ -13,6 +13,7 @@ import (
 
 	"git-interact/internal/git"
 	"git-interact/internal/tui"
+	"git-interact/internal/validate"
 )
 
 // copyToClipboard is a package var so tests can stub it out; the real
@@ -428,7 +429,7 @@ func buildBranchOperations(ctx context.Context, r *git.Runner, f branchFilters, 
 		},
 		{
 			Name: "rename", Key: "R", Scope: tui.ScopeItem,
-			Input: &tui.InputSpec{Prompt: "New name", Placeholder: "branch name"},
+			Input: &tui.InputSpec{Prompt: "New name", Placeholder: "branch name", Validate: validate.BranchName},
 			Run: func(c tui.OpContext) tea.Cmd {
 				b, ok := targetBranch(c.Items)
 				if !ok {
@@ -481,7 +482,7 @@ func buildBranchOperations(ctx context.Context, r *git.Runner, f branchFilters, 
 		},
 		{
 			Name: "new", Key: "N", Scope: tui.ScopeList,
-			Input: &tui.InputSpec{Prompt: "New branch", Placeholder: "branch name"},
+			Input: &tui.InputSpec{Prompt: "New branch", Placeholder: "branch name", Validate: validate.BranchName},
 			Run: func(c tui.OpContext) tea.Cmd {
 				if err := git.CreateBranch(ctx, r, c.Input, ""); err != nil {
 					return tui.Status(err.Error())

@@ -20,11 +20,22 @@ const logFormat = "%H\x1f%h\x1f%s\x1f%cr\x1f%an\x1f%D\x1f%cI"
 
 // ListCommits returns the commit history reachable from HEAD, most recent first.
 func ListCommits(ctx context.Context, r *Runner) ([]Commit, error) {
+	if !hasCommits(ctx, r) {
+		return nil, nil // unborn branch (freshly-init'd repo): an empty history
+	}
 	out, err := r.Run(ctx, "log", "--pretty=format:"+logFormat)
 	if err != nil {
 		return nil, err
 	}
 	return parseCommits(out), nil
+}
+
+// hasCommits reports whether HEAD resolves to a commit. It is false on an
+// unborn branch — a `git init`'d repo with no commits yet — where `git log`
+// would otherwise fail; callers use it to render an empty history instead.
+func hasCommits(ctx context.Context, r *Runner) bool {
+	_, err := r.Run(ctx, "rev-parse", "--verify", "--quiet", "HEAD")
+	return err == nil
 }
 
 func parseCommits(out string) []Commit {

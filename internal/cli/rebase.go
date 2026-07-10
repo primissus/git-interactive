@@ -156,7 +156,7 @@ func buildRebasePlanOps(ctx context.Context, r *git.Runner, plan git.RebasePlan,
 		{Name: "pick", Key: "p", Scope: tui.ScopeItem, Run: setOp(git.RebasePick)},
 		{
 			Name: "reword", Key: "r", Scope: tui.ScopeItem,
-			Input: &tui.InputSpec{Prompt: "New commit subject", Placeholder: "leave blank to keep the original"},
+			Input: &tui.InputSpec{Prompt: "New commit subject", Placeholder: "new subject line (pick keeps the original)"},
 			Run: func(c tui.OpContext) tea.Cmd {
 				step, ok := targetStep(c.Items)
 				if !ok {

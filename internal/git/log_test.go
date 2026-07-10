@@ -5,6 +5,19 @@ import (
 	"testing"
 )
 
+func TestListCommitsEmptyRepo(t *testing.T) {
+	// A freshly-init'd repo has an unborn branch; ListCommits must return an
+	// empty history rather than surfacing git's "no commits yet" error.
+	r := newTestRepo(t)
+	commits, err := ListCommits(context.Background(), r)
+	if err != nil {
+		t.Fatalf("ListCommits on empty repo: %v", err)
+	}
+	if len(commits) != 0 {
+		t.Fatalf("ListCommits on empty repo: got %d commits, want 0", len(commits))
+	}
+}
+
 func TestListCommits(t *testing.T) {
 	r := newTestRepo(t)
 	writeFile(t, r, "a.txt", "one\n")

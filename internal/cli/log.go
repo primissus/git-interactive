@@ -256,7 +256,10 @@ func buildLogOperations(ctx context.Context, r *git.Runner, full bool) []tui.Ope
 			},
 		},
 		{
-			Name: "reset", Key: "X", Scope: tui.ScopeItem,
+			// No shortcut key: reset has no key in PROMPT.md's log table, and
+			// "X" is reserved framework-wide for select mode (tui/list.go), so
+			// binding it here would be a dead shortcut. Reachable via the menu.
+			Name: "reset", Scope: tui.ScopeItem,
 			Confirm: &tui.Confirm{
 				Kind:   tui.ConfirmChoice,
 				Prompt: "Reset the current branch to this commit?",

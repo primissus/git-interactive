@@ -25,6 +25,9 @@ type GraphRow struct {
 // the graph on HEAD alone. simplify collapses commits with no ref decoration,
 // which is graph-branch's "each branch's last commit only" view.
 func ListCommitGraph(ctx context.Context, r *Runner, all, simplify bool) ([]GraphRow, error) {
+	if !hasCommits(ctx, r) {
+		return nil, nil // unborn branch: nothing to graph yet
+	}
 	args := []string{"log", "--graph", "--pretty=format:" + graphSentinel + logFormat}
 	if all {
 		args = append(args, "--all")

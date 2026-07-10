@@ -113,3 +113,45 @@ func TestInputRejectsEmptySubmit(t *testing.T) {
 		t.Fatalf("input: state=%v value=%q, want submitted/feature", m.state, m.value())
 	}
 }
+
+func TestInputAllowEmptySubmit(t *testing.T) {
+	st := DefaultStyles()
+	m := newInput(InputSpec{Prompt: "Message", AllowEmpty: true}, &st)
+
+	m.Update(keyType(tea.KeyEnter))
+	if m.state != inputSubmitted || m.value() != "" {
+		t.Fatalf("AllowEmpty blank submit: state=%v value=%q, want submitted/empty", m.state, m.value())
+	}
+}
+
+func TestInputValidateBlocksBadValue(t *testing.T) {
+	st := DefaultStyles()
+	reject := func(s string) error {
+		if s == "bad" {
+			return errBad
+		}
+		return nil
+	}
+	m := newInput(InputSpec{Prompt: "Name", Validate: reject}, &st)
+
+	// A value the validator rejects keeps the prompt open and records the error.
+	typeString(m.Update, "bad")
+	m.Update(keyType(tea.KeyEnter))
+	if m.state != inputPending || m.errMsg == "" {
+		t.Fatalf("validate reject: state=%v errMsg=%q, want pending with error", m.state, m.errMsg)
+	}
+
+	// Correcting the value clears the error and submits.
+	m.input.SetValue("good")
+	m.Update(keyType(tea.KeyEnter))
+	if m.state != inputSubmitted || m.errMsg != "" {
+		t.Fatalf("validate accept: state=%v errMsg=%q, want submitted/no-error", m.state, m.errMsg)
+	}
+}
+
+// errBad is a sentinel validation error used by TestInputValidateBlocksBadValue.
+var errBad = errTest("bad value")
+
+type errTest string
+
+func (e errTest) Error() string { return string(e) }

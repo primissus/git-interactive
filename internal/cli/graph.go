@@ -116,6 +116,7 @@ func runGraph(simplify bool) func(cmd *cobra.Command, args []string) error {
 			return tui.RenderTable(cmd.OutOrStdout(), graphColumns(), items, tui.TableOptions{
 				Density: densityFromFlags(flags),
 				Header:  true,
+				Marker:  true,
 			})
 		}
 

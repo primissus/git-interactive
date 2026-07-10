@@ -144,6 +144,17 @@ func TestSelectModeBulkTypedConfirm(t *testing.T) {
 	finish(t, tm)
 }
 
+func TestResizeUpdatesDimensions(t *testing.T) {
+	tm := newTestModel(t)
+	tm.Send(tea.WindowSizeMsg{Width: 40, Height: 10})
+	// Navigate after the resize to exercise the reflowed viewport without panic.
+	sendKeys(tm, keyRunes('G'), keyRunes('g'))
+	l := finish(t, tm)
+	if l.width != 40 || l.height != 10 {
+		t.Fatalf("resize: got %dx%d, want 40x10", l.width, l.height)
+	}
+}
+
 func TestSelectModeTracksSelection(t *testing.T) {
 	tm := newTestModel(t)
 	sendKeys(tm,

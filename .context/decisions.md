@@ -20,11 +20,11 @@
 - **Rejected:** go-git as the default — reconsider only where porcelain parsing gets painful.
 - **Status:** current
 
-## 2026-07 · Validation library
-- **Decision:** [PENDING: evaluate go-playground/validator vs lighter options — scheduled for phase 8]
-- **Why:** —
-- **Rejected:** —
-- **Status:** open
+## 2026-07 · Validation library — internal `validate`, not go-playground/validator (phase 8)
+- **Decision:** a small in-house `internal/validate` package (plain functions, no struct tags) validates TUI text inputs. `BranchName` applies git's own ref-format rules (the subset `git check-ref-format --branch` enforces) in-process; commit/stash messages need only the framework's built-in non-empty guard. Inputs opt in via `InputSpec.Validate func(string) error`; optional inputs opt out of the non-empty guard via `InputSpec.AllowEmpty`.
+- **Why:** go-playground/validator is a reflection/struct-tag validator built for web/API DTOs (email, URL, numeric ranges). Git ref validity is not expressible as a tag — it would require a custom validator function anyway, at which point the dependency adds only reflection overhead and a heavier import graph. A tiny function package is a better fit: zero new deps, unit-testable without a repo, and it yields a precise per-rule message the TUI shows inline under the field.
+- **Rejected:** go-playground/validator (wrong shape, dead weight); shelling out to `git check-ref-format` (needs a repo/subprocess per keystroke-batch and gives a terse generic error rather than a named rule).
+- **Status:** current
 
 ## 2026-07 · Graph rendering approach
 - **Decision:** parse `git log --graph --pretty=format:...`, using a sentinel control character (`\x02`) as the field-format's first byte so the ASCII graph glyphs (which git prepends to the format string on every commit line, and are the entire content of pure connector lines) can be split from the commit data by string index rather than re-deriving the graph from parent/child edges.
@@ -96,4 +96,16 @@
 - **Decision:** the `branch` view's "created" sort uses the tip commit's author date (`%(authordate:unix)`), not committer date.
 - **Why:** git has no stored branch-creation timestamp. Author date survives rebase/amend (which rewrite committer date), and matches the common `git branch --sort=-creatordate` convention.
 - **Rejected:** committer date — drifts on every rebase/amend, so it doesn't track "when the branch's work started."
+- **Status:** current
+
+## 2026-07 · select-mode diff hook is the SelectedItems + bulk-op contract (phase 8)
+- **Decision:** the future `diff`-between-two-items integration (PROMPT.md → Future → diff, "design select mode in v1 so this operation can plug in later") has no v1 implementation; the reserved hook is `List.SelectedItems()` (returns the selection in list order) plus the bulk-operation registry. When `diff` lands it registers a `Bulk`/`BulkOnly` op that acts when `len(SelectedItems()) == 2`, exactly like `log`'s bulk cherry-pick. No placeholder op is added in v1.
+- **Why:** the framework already exposes the selection and routes bulk ops through the same menu; adding a real hook now is design-only future-proofing, and a dead "diff" menu entry that errors would be worse UX than none. `graph`/`graph-branch` register no bulk ops in v1, so their select mode reports "no operations available" until `diff` (or another bulk op) is added — accepted, since v1 gives them no bulk action.
+- **Rejected:** shipping a stub diff op that returns "not implemented" (misleading menu entry); a bespoke two-item callback separate from the bulk-op path (would fork the menu routing the diff op will reuse).
+- **Status:** current
+
+## 2026-07 · phase-8 consistency audit — accepted divergences
+- **Decision:** two low-severity key/flag divergences from the shared model are kept as-is: (1) `stash` binds `p` to **pop** (the common table reserves `p` for pull, but stashes have no pull, and `p`=pop is the natural mnemonic); (2) `-S/--sort` is attached to every command for a uniform flag surface but only `branch` reorders by it — `worktree` always sorts by path and the commit views pass it as a display label only.
+- **Why:** the audit's one real bug (a dead `reset` shortcut bound to the reserved `X` in `log`) and the `graph -I` missing-marker cosmetic were fixed; these two remaining items are intentional, harmless, and churning them (remapping the obvious pop key, or building per-view sort parity) would cost more than the consistency gained. Recorded so a future audit doesn't re-flag them.
+- **Rejected:** remapping stash `p`; making `-S` a hard error on commands that ignore it; implementing full worktree/commit sort parity in v1.
 - **Status:** current

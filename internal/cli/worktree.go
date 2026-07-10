@@ -13,6 +13,7 @@ import (
 
 	"git-interact/internal/git"
 	"git-interact/internal/tui"
+	"git-interact/internal/validate"
 )
 
 // worktreeItem adapts a git.Worktree to tui.Item. Columns: shortest path,
@@ -328,7 +329,7 @@ func buildWorktreeOperations(ctx context.Context, r *git.Runner, checkoutPath *s
 		},
 		{
 			Name: "rename branch", Key: "R", Scope: tui.ScopeItem,
-			Input: &tui.InputSpec{Prompt: "New branch name", Placeholder: "branch name"},
+			Input: &tui.InputSpec{Prompt: "New branch name", Placeholder: "branch name", Validate: validate.BranchName},
 			Run: func(c tui.OpContext) tea.Cmd {
 				w, ok := targetWorktree(c.Items)
 				if !ok {
@@ -355,7 +356,7 @@ func buildWorktreeOperations(ctx context.Context, r *git.Runner, checkoutPath *s
 		},
 		{
 			Name: "lock", Scope: tui.ScopeItem,
-			Input: &tui.InputSpec{Prompt: "Lock reason (optional)"},
+			Input: &tui.InputSpec{Prompt: "Lock reason (optional)", AllowEmpty: true},
 			Run: func(c tui.OpContext) tea.Cmd {
 				w, ok := targetWorktree(c.Items)
 				if !ok {

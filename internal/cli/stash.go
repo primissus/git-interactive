@@ -161,7 +161,7 @@ func buildStashOperations(ctx context.Context, r *git.Runner) []tui.Operation {
 		},
 		{
 			Name: "new", Key: "N", Scope: tui.ScopeList,
-			Input: &tui.InputSpec{Prompt: "Stash message (optional)"},
+			Input: &tui.InputSpec{Prompt: "Stash message (optional)", AllowEmpty: true},
 			Run: func(c tui.OpContext) tea.Cmd {
 				if err := git.StashPush(ctx, r, c.Input); err != nil {
 					return tui.Status(err.Error())

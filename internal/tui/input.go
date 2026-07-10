@@ -23,6 +23,7 @@ type inputModel struct {
 	input  textinput.Model
 	styles *Styles
 	state  inputState
+	errMsg string // last validation error, shown under the field
 }
 
 func newInput(spec InputSpec, st *Styles) inputModel {
@@ -44,9 +45,21 @@ func (m *inputModel) Update(msg tea.Msg) tea.Cmd {
 			m.state = inputCanceled
 			return nil
 		case "enter":
-			if strings.TrimSpace(m.input.Value()) != "" {
-				m.state = inputSubmitted
+			val := strings.TrimSpace(m.input.Value())
+			if val == "" {
+				if m.spec.AllowEmpty {
+					m.state = inputSubmitted
+				}
+				return nil
 			}
+			if m.spec.Validate != nil {
+				if err := m.spec.Validate(val); err != nil {
+					m.errMsg = err.Error()
+					return nil
+				}
+			}
+			m.errMsg = ""
+			m.state = inputSubmitted
 			return nil
 		}
 	}
@@ -63,6 +76,10 @@ func (m inputModel) View() string {
 	b.WriteString("\n\n")
 	b.WriteString(m.input.View())
 	b.WriteString("\n\n")
+	if m.errMsg != "" {
+		b.WriteString(m.styles.Status.Render(m.errMsg))
+		b.WriteString("\n\n")
+	}
 	b.WriteString(m.styles.Help.Render("enter submit · esc cancel"))
 	return m.styles.Overlay.Render(b.String())
 }

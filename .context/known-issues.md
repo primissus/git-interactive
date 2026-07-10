@@ -20,4 +20,6 @@
 
 ## Things that look broken but are intentional
 - `-i/--interactive` being the default means bare `gint <cmd>` opens a TUI — scripts must pass `-I`.
-- [PENDING]
+- `merge` ignores `-I` and always confirms (it's a one-shot wizard with no tabular form — see decisions). `-S` is attached to every command but only `branch` reorders by it; `stash` binds `p` to pop, not pull. All intentional (phase-8 audit).
+- `log`'s `reset` has no keyboard shortcut on purpose: `X` is reserved framework-wide for select mode, and PROMPT.md assigns reset no key — it's menu-only.
+- On a freshly `git init`'d repo (unborn branch) `log`/`graph` show an empty list rather than an error; run outside a repo, every command fails fast with "not a git repository" (via the root `PersistentPreRunE`).

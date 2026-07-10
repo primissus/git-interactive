@@ -2,8 +2,24 @@
 package cli
 
 import (
+	"fmt"
+
 	"github.com/spf13/cobra"
+
+	"git-interact/internal/git"
 )
+
+// version is the build-stamped release string, overridden via -ldflags at
+// build time (see Makefile). Defaults to "dev" for `go run`/plain builds.
+var version = "dev"
+
+// SetVersion overrides the reported version. main passes the ldflags-stamped
+// value through here so the cli package owns the --version wiring.
+func SetVersion(v string) {
+	if v != "" {
+		version = v
+	}
+}
 
 // Execute builds the command tree and runs it against os.Args.
 func Execute() error {
@@ -13,11 +29,28 @@ func Execute() error {
 
 func newRootCmd() *cobra.Command {
 	root := &cobra.Command{
-		Use:           "gint",
-		Short:         "gint wraps common git operations in interactive TUI views",
+		Use:     "gint",
+		Short:   "gint wraps common git operations in interactive TUI views",
+		Version: version,
+		// main prints the returned error and sets the exit code, so cobra must
+		// not also print it — otherwise every failure shows up twice.
 		SilenceUsage:  true,
-		SilenceErrors: false,
+		SilenceErrors: true,
+		// Every gint command operates on a repository; fail early with a clear
+		// message when run outside one, instead of surfacing a raw git error
+		// from deep in a command. The demo command uses canned data, so it is
+		// exempt.
+		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
+			if cmd.Name() == "demo" {
+				return nil
+			}
+			if _, err := git.NewRunner("").Run(cmd.Context(), "rev-parse", "--git-dir"); err != nil {
+				return fmt.Errorf("not a git repository — run gint inside a git repo")
+			}
+			return nil
+		},
 	}
+	root.SetVersionTemplate("gint {{.Version}}\n")
 
 	root.AddCommand(
 		newBranchCmd(),
