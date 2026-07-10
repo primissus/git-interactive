@@ -29,3 +29,15 @@
 ## [Date] · Graph rendering approach
 - **Decision:** [PENDING: parse `git log --graph` vs render from parent data — decide in phase 4]
 - **Status:** open
+
+## 2026-07 · worktree "checkout" cd mechanism
+- **Decision:** the `checkout` operation quits the TUI and prints the selected worktree's path as the program's final stdout line; it does not attempt to change the parent shell's directory.
+- **Why:** a `gint` subprocess cannot mutate its parent shell's cwd. Printing the path is the standard pattern for this class of tool — a shell function/alias (e.g. `gintcd() { cd "$(gint worktree "$@")"; }`) can wrap it to actually `cd`. Documented here rather than shipping a shell integration script, since none exists yet.
+- **Rejected:** writing the path to a fixed temp file — no benefit over stdout for this case, and adds a stale-file failure mode.
+- **Status:** current
+
+## 2026-07 · branch "created" sort heuristic
+- **Decision:** the `branch` view's "created" sort uses the tip commit's author date (`%(authordate:unix)`), not committer date.
+- **Why:** git has no stored branch-creation timestamp. Author date survives rebase/amend (which rewrite committer date), and matches the common `git branch --sort=-creatordate` convention.
+- **Rejected:** committer date — drifts on every rebase/amend, so it doesn't track "when the branch's work started."
+- **Status:** current

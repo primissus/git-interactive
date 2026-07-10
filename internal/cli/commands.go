@@ -25,17 +25,6 @@ func attachCommonFlags(cmd *cobra.Command) {
 	registeredFlags[cmd] = registerCommonFlags(cmd)
 }
 
-func newWorktreeCmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:     "worktree",
-		Aliases: []string{"wt"},
-		Short:   "Interactive list of worktrees",
-	}
-	attachCommonFlags(cmd)
-	cmd.RunE = stubRun("worktree")
-	return cmd
-}
-
 func newGraphBranchCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "graph-branch",

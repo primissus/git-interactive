@@ -27,6 +27,60 @@ func ListWorktrees(ctx context.Context, r *Runner) ([]Worktree, error) {
 	return parseWorktrees(out), nil
 }
 
+// AddWorktree creates a worktree at path. When newBranch is true it creates
+// branch as a new branch (`-b`) starting from startPoint (HEAD if ""); when
+// false it checks out the existing branch there.
+func AddWorktree(ctx context.Context, r *Runner, path, branch string, newBranch bool, startPoint string) error {
+	args := []string{"worktree", "add"}
+	if newBranch {
+		args = append(args, "-b", branch, path)
+		if startPoint != "" {
+			args = append(args, startPoint)
+		}
+	} else {
+		args = append(args, path, branch)
+	}
+	_, err := r.Run(ctx, args...)
+	return err
+}
+
+// RemoveWorktree removes the worktree at path; force removes it even with
+// untracked/modified files or a locked worktree.
+func RemoveWorktree(ctx context.Context, r *Runner, path string, force bool) error {
+	args := []string{"worktree", "remove"}
+	if force {
+		args = append(args, "--force")
+	}
+	args = append(args, path)
+	_, err := r.Run(ctx, args...)
+	return err
+}
+
+// PruneWorktrees removes administrative files for worktrees whose directory
+// no longer exists.
+func PruneWorktrees(ctx context.Context, r *Runner) error {
+	_, err := r.Run(ctx, "worktree", "prune")
+	return err
+}
+
+// LockWorktree locks the worktree at path against `worktree prune`/`remove`,
+// optionally recording reason.
+func LockWorktree(ctx context.Context, r *Runner, path, reason string) error {
+	args := []string{"worktree", "lock"}
+	if reason != "" {
+		args = append(args, "--reason", reason)
+	}
+	args = append(args, path)
+	_, err := r.Run(ctx, args...)
+	return err
+}
+
+// UnlockWorktree unlocks the worktree at path.
+func UnlockWorktree(ctx context.Context, r *Runner, path string) error {
+	_, err := r.Run(ctx, "worktree", "unlock", path)
+	return err
+}
+
 func parseWorktrees(out string) []Worktree {
 	var worktrees []Worktree
 	var cur *Worktree

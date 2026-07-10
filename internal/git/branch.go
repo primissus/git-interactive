@@ -2,6 +2,7 @@ package git
 
 import (
 	"context"
+	"errors"
 	"strconv"
 	"strings"
 )
@@ -21,9 +22,12 @@ type Branch struct {
 	UpstreamTrack string
 }
 
+// Gone reports whether the branch's upstream was deleted.
+func (b Branch) Gone() bool { return strings.Contains(b.UpstreamTrack, "gone") }
+
 // branchFormat mirrors git-br.py's field order (name, subject, date, author,
-// worktree) plus machine-readable fields (unix timestamps, upstream tracking
-// state) for later sorting/filtering.
+// worktree) plus the extra machine-readable fields phase 3 needs for
+// sorting/filtering: unix timestamps and upstream tracking state.
 const branchFormat = "%(HEAD)\x1f%(refname:short)\x1f%(contents:subject)\x1f" +
 	"%(committerdate:relative)\x1f%(committerdate:unix)\x1f%(authordate:unix)\x1f" +
 	"%(authorname)\x1f%(worktreepath)\x1f%(upstream:track)"
@@ -65,6 +69,23 @@ func parseBranches(out string) []Branch {
 	return branches
 }
 
+// MergedBranches returns the set of local branch names merged into HEAD (the
+// current branch), for the branch view's merged/not-merged filter.
+func MergedBranches(ctx context.Context, r *Runner) (map[string]bool, error) {
+	out, err := r.Run(ctx, "branch", "--format=%(refname:short)", "--merged")
+	if err != nil {
+		return nil, err
+	}
+	set := map[string]bool{}
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			set[line] = true
+		}
+	}
+	return set, nil
+}
+
 // CurrentBranch returns the name of the checked-out branch, or "" if detached.
 func CurrentBranch(ctx context.Context, r *Runner) (string, error) {
 	out, err := r.Run(ctx, "rev-parse", "--abbrev-ref", "HEAD")
@@ -76,4 +97,84 @@ func CurrentBranch(ctx context.Context, r *Runner) (string, error) {
 		return "", nil
 	}
 	return name, nil
+}
+
+// RevParse resolves ref to its full object SHA.
+func RevParse(ctx context.Context, r *Runner, ref string) (string, error) {
+	out, err := r.Run(ctx, "rev-parse", ref)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(out), nil
+}
+
+// BranchExists reports whether a local branch named name exists.
+func BranchExists(ctx context.Context, r *Runner, name string) (bool, error) {
+	_, err := r.Run(ctx, "show-ref", "--verify", "--quiet", "refs/heads/"+name)
+	if err == nil {
+		return true, nil
+	}
+	var gitErr *Error
+	if errors.As(err, &gitErr) {
+		return false, nil
+	}
+	return false, err
+}
+
+// CreateBranch creates a new branch named name. If startPoint is "" it starts
+// from HEAD.
+func CreateBranch(ctx context.Context, r *Runner, name, startPoint string) error {
+	args := []string{"branch", name}
+	if startPoint != "" {
+		args = append(args, startPoint)
+	}
+	_, err := r.Run(ctx, args...)
+	return err
+}
+
+// CheckoutBranch checks out an existing local branch.
+func CheckoutBranch(ctx context.Context, r *Runner, name string) error {
+	_, err := r.Run(ctx, "checkout", name)
+	return err
+}
+
+// DeleteBranch deletes a local branch; force uses -D instead of -d.
+func DeleteBranch(ctx context.Context, r *Runner, name string, force bool) error {
+	flag := "-d"
+	if force {
+		flag = "-D"
+	}
+	_, err := r.Run(ctx, "branch", flag, name)
+	return err
+}
+
+// RenameBranch renames a local branch.
+func RenameBranch(ctx context.Context, r *Runner, oldName, newName string) error {
+	_, err := r.Run(ctx, "branch", "-m", oldName, newName)
+	return err
+}
+
+// PullBranch updates name from its upstream. When name is the current branch
+// this is a plain `git pull`; otherwise it fetches the upstream directly into
+// the local ref without checking it out.
+func PullBranch(ctx context.Context, r *Runner, name string, current bool) error {
+	if current {
+		_, err := r.Run(ctx, "pull")
+		return err
+	}
+	_, err := r.Run(ctx, "fetch", "origin", name+":"+name)
+	return err
+}
+
+// PushBranch pushes name to its upstream (origin), setting the upstream on
+// the first push.
+func PushBranch(ctx context.Context, r *Runner, name string) error {
+	_, err := r.Run(ctx, "push", "-u", "origin", name)
+	return err
+}
+
+// TagRef creates a lightweight tag named tag pointing at target.
+func TagRef(ctx context.Context, r *Runner, tag, target string) error {
+	_, err := r.Run(ctx, "tag", tag, target)
+	return err
 }
