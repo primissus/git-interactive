@@ -41,7 +41,7 @@ func newRootCmd() *cobra.Command {
 		// from deep in a command. The demo command uses canned data, so it is
 		// exempt.
 		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
-			if cmd.Name() == "demo" {
+			if cmd.Name() == "demo" || cmd.Name() == "shell-init" {
 				return nil
 			}
 			if _, err := git.NewRunner("").Run(cmd.Context(), "rev-parse", "--git-dir"); err != nil {
@@ -65,6 +65,7 @@ func newRootCmd() *cobra.Command {
 		newStashCmd(),
 		newCommitCmd(),
 		newDemoCmd(),
+		newShellInitCmd(),
 	)
 
 	return root

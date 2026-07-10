@@ -46,11 +46,11 @@ func (i graphItem) Current() bool { return i.isHead }
 
 func graphColumns() []tui.Column {
 	return []tui.Column{
-		{Title: "graph", MinWidth: 4, Density: tui.DensityShort},
+		{Title: "graph", MinWidth: 4, Density: tui.DensityShort, Render: tui.ColorizeGraphPrefix},
 		{Title: "message", MinWidth: 12, MaxWidth: 60, Flex: true, Density: tui.DensityShort},
-		{Title: "date", MinWidth: 10, Density: tui.DensityNormal},
-		{Title: "author", MinWidth: 8, Density: tui.DensityNormal},
-		{Title: "branches", MinWidth: 8, Density: tui.DensityFull},
+		{Title: "date", MinWidth: 10, Density: tui.DensityNormal, Color: tui.ColorDate},
+		{Title: "author", MinWidth: 8, Density: tui.DensityNormal, Color: tui.ColorAuthor},
+		{Title: "branches", MinWidth: 8, Density: tui.DensityFull, Color: tui.ColorRef},
 	}
 }
 

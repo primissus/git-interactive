@@ -52,12 +52,12 @@ func logColumns(full bool) []tui.Column {
 		msgMax = 0
 	}
 	return []tui.Column{
-		{Title: "sha", MinWidth: 7, Density: tui.DensityShort},
+		{Title: "sha", MinWidth: 7, Density: tui.DensityShort, Color: tui.ColorSHA},
 		{Title: "message", MinWidth: 12, MaxWidth: msgMax, Flex: true, Density: tui.DensityShort},
-		{Title: "date", MinWidth: 10, Density: tui.DensityNormal},
-		{Title: "author", MinWidth: 8, Density: tui.DensityNormal},
-		{Title: "branches", MinWidth: 8, Density: tui.DensityNormal},
-		{Title: "worktree", MinWidth: 8, Density: tui.DensityFull},
+		{Title: "date", MinWidth: 10, Density: tui.DensityNormal, Color: tui.ColorDate},
+		{Title: "author", MinWidth: 8, Density: tui.DensityNormal, Color: tui.ColorAuthor},
+		{Title: "branches", MinWidth: 8, Density: tui.DensityNormal, Color: tui.ColorRef},
+		{Title: "worktree", MinWidth: 8, Density: tui.DensityFull, Color: tui.ColorDate},
 	}
 }
 

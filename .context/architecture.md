@@ -16,7 +16,7 @@
 - `cmd/gint/` → main entry point
 - `internal/cli/` → Cobra commands (one file per command; `_demo` is the hidden TUI harness)
 - `internal/git/` → git exec wrapper + porcelain parsers
-- `internal/tui/` → shared Bubble Tea interaction layer (list, search, menu, confirm, input, select mode, tabular renderer). Commands supply `Item`s + `Operation`s to `tui.New`; they never reimplement interactions.
+- `internal/tui/` → shared Bubble Tea interaction layer (list, search, menu, confirm, input, select mode, tabular renderer, `batch.go` resilient bulk ops, `?` help overlay, count-prefix/half-page nav, per-column color via `Column.Color`/`Column.Render`). Commands supply `Item`s + `Operation`s to `tui.New`; they never reimplement interactions.
 - `phases/p1..p8/` → development plan (PLAN.md) and status (PROGRESS.md) per phase
 - `PROMPT.md` → full product spec (source of truth for behavior)
 

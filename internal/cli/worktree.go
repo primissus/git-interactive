@@ -38,9 +38,9 @@ func (i worktreeItem) Current() bool       { return i.isMainWT }
 func worktreeColumns() []tui.Column {
 	return []tui.Column{
 		{Title: "path", MinWidth: 12, Flex: true, Density: tui.DensityShort},
-		{Title: "branch", MinWidth: 10, Density: tui.DensityShort},
-		{Title: "commit", MinWidth: 7, Density: tui.DensityNormal},
-		{Title: "date", MinWidth: 10, Density: tui.DensityNormal},
+		{Title: "branch", MinWidth: 10, Density: tui.DensityShort, Color: tui.ColorName},
+		{Title: "commit", MinWidth: 7, Density: tui.DensityNormal, Color: tui.ColorSHA},
+		{Title: "date", MinWidth: 10, Density: tui.DensityNormal, Color: tui.ColorDate},
 	}
 }
 
@@ -134,6 +134,8 @@ func newWorktreeCmd() *cobra.Command {
 	cmd.Flags().String("branch", "", "branch for --new (defaults to the path's base name); with an existing branch, checks it out instead of creating one")
 	cmd.Flags().BoolP("delete", "D", false, "remove worktree (force)")
 	cmd.Flags().StringP("rename", "m", "", "rename the worktree's branch to this name")
+	cmd.Flags().String("cd-file", "", "write the checked-out worktree path to this file (used by the shell wrapper)")
+	_ = cmd.Flags().MarkHidden("cd-file")
 	cmd.RunE = runWorktree
 	return cmd
 }
@@ -200,10 +202,13 @@ func runWorktree(cmd *cobra.Command, args []string) error {
 		})
 	}
 
+	cdFile, _ := cmd.Flags().GetString("cd-file")
+
 	// checkoutPath receives the selected worktree's path from the "checkout"
-	// operation; runWorktree prints it after the program exits so a shell
-	// wrapper can `cd "$(gint worktree ...)"` (PLAN.md → worktree "cd-on-
-	// checkout mechanism"; see .context/decisions.md).
+	// operation. After the program exits it is handed back to the shell: written
+	// to --cd-file for the `gint shell-init` wrapper (robust against the TUI's
+	// own stdout), or, absent that, printed as the final stdout line for a
+	// hand-rolled `cd "$(gint worktree ...)"` (see .context/decisions.md).
 	var checkoutPath string
 	list := tui.New(tui.Config{
 		Title:      "gint worktree",
@@ -218,6 +223,9 @@ func runWorktree(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	if checkoutPath != "" {
+		if cdFile != "" {
+			return os.WriteFile(cdFile, []byte(checkoutPath+"\n"), 0o644)
+		}
 		_, err := fmt.Fprintln(cmd.OutOrStdout(), checkoutPath)
 		return err
 	}

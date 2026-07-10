@@ -1,6 +1,10 @@
 package tui
 
-import "github.com/charmbracelet/lipgloss"
+import (
+	"strings"
+
+	"github.com/charmbracelet/lipgloss"
+)
 
 // Styles holds every Lip Gloss style the shared views use. DefaultStyles
 // returns a ready theme; commands may tweak individual fields.
@@ -38,6 +42,50 @@ var (
 	colorDanger  = lipgloss.AdaptiveColor{Light: "#CF222E", Dark: "#F85149"}
 	colorInvert  = lipgloss.AdaptiveColor{Light: "#FFFFFF", Dark: "#0D1117"}
 )
+
+// Column tint colors, exported so command views can hand a hue to Column.Color.
+// They reuse the base palette where it fits and add a few distinct accents so a
+// wide table (sha · message · date · author · refs) stays scannable.
+var (
+	ColorName   = colorAccent                                               // branch / primary identifier
+	ColorSHA    = lipgloss.AdaptiveColor{Light: "#9A6700", Dark: "#E3B341"} // amber
+	ColorDate   = colorFaint                                                // de-emphasized
+	ColorAuthor = lipgloss.AdaptiveColor{Light: "#0550AE", Dark: "#58A6FF"} // blue
+	ColorRef    = colorCurrent                                              // branch/ref decorations
+)
+
+// graphLaneColors cycles across a graph's lanes so adjacent branches read as
+// distinct strands rather than one monochrome mesh.
+var graphLaneColors = []lipgloss.TerminalColor{
+	colorAccent,
+	lipgloss.AdaptiveColor{Light: "#0550AE", Dark: "#58A6FF"}, // blue
+	colorCurrent, // green
+	lipgloss.AdaptiveColor{Light: "#9A6700", Dark: "#E3B341"}, // amber
+	lipgloss.AdaptiveColor{Light: "#CF222E", Dark: "#F85149"}, // red
+	lipgloss.AdaptiveColor{Light: "#8250DF", Dark: "#D2A8FF"}, // violet
+	lipgloss.AdaptiveColor{Light: "#1B7C83", Dark: "#39C5CF"}, // teal
+}
+
+// ColorizeGraphPrefix tints a `git log --graph` glyph run lane by lane: each
+// visible column position cycles through graphLaneColors, so vertical strands
+// keep a stable hue down the view. It preserves display width (every rune is
+// wrapped in its own SGR pair), which the table renderer relies on. Suitable as
+// a Column.Render.
+func ColorizeGraphPrefix(s string) string {
+	var b strings.Builder
+	col := 0 // visual column, so a lane keeps one hue straight down the view
+	for _, r := range s {
+		switch r {
+		case '|', '*', '/', '\\', '_', '.', '-', '+', '<', '>':
+			style := lipgloss.NewStyle().Foreground(graphLaneColors[col%len(graphLaneColors)])
+			b.WriteString(style.Render(string(r)))
+		default:
+			b.WriteRune(r)
+		}
+		col++
+	}
+	return b.String()
+}
 
 // DefaultStyles returns the standard gint theme.
 func DefaultStyles() Styles {

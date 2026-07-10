@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"fmt"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
@@ -119,17 +120,22 @@ func buildAddOperations(ctx context.Context, r *git.Runner) []tui.Operation {
 			},
 		},
 		{
-			Name: "restore file", Key: "D", Scope: tui.ScopeItem,
-			Confirm: &tui.Confirm{Kind: tui.ConfirmTyped, Prompt: "Restore this file, discarding changes?", Phrase: "discard"},
+			Name: "restore file", Key: "D", Scope: tui.ScopeItem, Bulk: true,
+			Confirm: &tui.Confirm{Kind: tui.ConfirmTyped, Prompt: "Restore the selected file(s), discarding changes?", Phrase: "discard"},
 			Run: func(c tui.OpContext) tea.Cmd {
-				s, ok := targetStatusEntry(c.Items)
-				if !ok {
+				items := targetAddItems(c.Items)
+				if len(items) == 0 {
 					return tui.Status("select a file first")
 				}
-				if err := git.DiscardFile(ctx, r, s.e.Path, s.untracked); err != nil {
-					return tui.Status(err.Error())
+				for _, s := range items {
+					if err := git.DiscardFile(ctx, r, s.e.Path, s.untracked); err != nil {
+						return tui.Status(err.Error())
+					}
 				}
-				return refreshWith("restored " + s.e.Path)
+				if len(items) == 1 {
+					return refreshWith("restored " + items[0].e.Path)
+				}
+				return refreshWith(fmt.Sprintf("restored %d files", len(items)))
 			},
 		},
 		{

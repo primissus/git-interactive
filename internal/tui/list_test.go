@@ -155,6 +155,86 @@ func TestResizeUpdatesDimensions(t *testing.T) {
 	}
 }
 
+func TestCountPrefixJump(t *testing.T) {
+	tm := newTestModel(t)
+	// "3j" moves the cursor down three rows in one motion.
+	sendKeys(tm, keyRunes('3'), keyRunes('j'))
+	l := finish(t, tm)
+	if l.cursor != 3 {
+		t.Fatalf("cursor after 3j: got %d, want 3", l.cursor)
+	}
+}
+
+func TestHalfPageJumpClampsToEnd(t *testing.T) {
+	tm := newTestModel(t)
+	// 'd' is a half-page jump when the view binds no "d" operation; on the short
+	// demo list it clamps to the last row.
+	sendKeys(tm, keyRunes('d'))
+	l := finish(t, tm)
+	if l.cursor != len(l.visible)-1 {
+		t.Fatalf("cursor after d (half-page): got %d, want %d", l.cursor, len(l.visible)-1)
+	}
+}
+
+func TestHelpOverlayOpensAndCloses(t *testing.T) {
+	tm := newTestModel(t)
+	sendKeys(tm, keyRunes('?'))
+	waitForText(t, tm, "Navigation")
+	// Any key dismisses it and returns to list mode.
+	sendKeys(tm, keyType(tea.KeyEsc))
+	l := finish(t, tm)
+	if l.mode != modeList {
+		t.Fatalf("help overlay did not close: mode=%v", l.mode)
+	}
+}
+
+func TestSelectToggleWithX(t *testing.T) {
+	tm := newTestModel(t)
+	// In select mode "x" toggles the row like space does.
+	sendKeys(tm, keyRunes('X'), keyRunes('x'), keyRunes('j'), keyRunes('x'))
+	l := finish(t, tm)
+	if got := len(l.SelectedItems()); got != 2 {
+		t.Fatalf("x-toggle selected %d rows, want 2", got)
+	}
+}
+
+func TestBatchContinuesPastFailure(t *testing.T) {
+	tm := newTestModel(t)
+	// Select main (deletes ok) and fix/pagination (fails), run resilient delete.
+	sendKeys(tm,
+		keyRunes('X'),
+		tea.KeyMsg{Type: tea.KeySpace}, // select main
+		keyRunes('j'), keyRunes('j'), keyRunes('j'),
+		tea.KeyMsg{Type: tea.KeySpace}, // select fix/pagination
+		keyType(tea.KeyEnter),          // bulk menu
+	)
+	tm.Type("resilient")
+	sendKeys(tm, keyType(tea.KeyEnter), keyRunes('y')) // pick op, confirm yes/no
+	// The failed branch pauses with a continue prompt.
+	waitForText(t, tm, "deleted failed: fix/pagination")
+	// Continue past it; the run finishes with a summary.
+	sendKeys(tm, keyRunes('y'))
+	waitForText(t, tm, "deleted 1 · failed 1")
+	finish(t, tm)
+}
+
+func TestBatchStopOnFailure(t *testing.T) {
+	tm := newTestModel(t)
+	sendKeys(tm,
+		keyRunes('X'),
+		keyRunes('j'), keyRunes('j'), keyRunes('j'),
+		tea.KeyMsg{Type: tea.KeySpace}, // select fix/pagination (fails first)
+		keyType(tea.KeyEnter),
+	)
+	tm.Type("resilient")
+	sendKeys(tm, keyType(tea.KeyEnter), keyRunes('y'))
+	waitForText(t, tm, "deleted failed: fix/pagination")
+	// 'n' stops the run; the summary reports zero deleted, one failed.
+	sendKeys(tm, keyRunes('n'))
+	waitForText(t, tm, "deleted 0 · failed 1")
+	finish(t, tm)
+}
+
 func TestSelectModeTracksSelection(t *testing.T) {
 	tm := newTestModel(t)
 	sendKeys(tm,

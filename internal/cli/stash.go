@@ -22,10 +22,10 @@ func (i stashItem) Current() bool       { return false }
 
 func stashColumns() []tui.Column {
 	return []tui.Column{
-		{Title: "index", MinWidth: 8, Density: tui.DensityShort},
+		{Title: "index", MinWidth: 8, Density: tui.DensityShort, Color: tui.ColorSHA},
 		{Title: "message", MinWidth: 12, Flex: true, Density: tui.DensityShort},
-		{Title: "branch", MinWidth: 8, Density: tui.DensityNormal},
-		{Title: "date", MinWidth: 10, Density: tui.DensityNormal},
+		{Title: "branch", MinWidth: 8, Density: tui.DensityNormal, Color: tui.ColorName},
+		{Title: "date", MinWidth: 10, Density: tui.DensityNormal, Color: tui.ColorDate},
 	}
 }
 

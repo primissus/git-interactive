@@ -42,6 +42,11 @@ type Operation struct {
 	// Confirm, when non-nil, gates the operation behind a confirmation flow.
 	// The chosen value (for multi-choice) arrives in OpContext.Choice.
 	Confirm *Confirm
+	// Batch, when non-nil, runs the operation over its target items one at a
+	// time with per-failure recovery (see BatchSpec), instead of Run. Use it for
+	// destructive bulk actions so one failing item does not strand the rest.
+	// When both are set Batch wins.
+	Batch *BatchSpec
 	// Run performs the operation and returns a tea.Cmd (often Status(...) or
 	// SetItems(...)). It runs only after any Input and Confirm steps succeed.
 	Run func(OpContext) tea.Cmd

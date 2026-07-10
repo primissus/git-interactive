@@ -1,7 +1,9 @@
 package tui
 
 import (
+	"errors"
 	"strconv"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -127,6 +129,21 @@ func DemoOperations() []Operation {
 			Confirm: &Confirm{Kind: ConfirmTyped, Prompt: "Delete the selected branches?", Phrase: "delete all"},
 			Run: func(c OpContext) tea.Cmd {
 				return Status(plural("deleted", len(c.Items)))
+			},
+		},
+		{
+			// A resilient bulk delete: any branch whose name contains "fix" fails
+			// its step, exercising the per-failure continue prompt.
+			Name: "resilient delete", Scope: ScopeItem, BulkOnly: true,
+			Confirm: &Confirm{Kind: ConfirmYesNo, Prompt: "Resiliently delete the selected branches?"},
+			Batch: &BatchSpec{
+				Verb: "deleted",
+				Step: func(it Item) error {
+					if strings.Contains(it.FilterValue(), "fix") {
+						return errors.New("not fully merged")
+					}
+					return nil
+				},
 			},
 		},
 	}

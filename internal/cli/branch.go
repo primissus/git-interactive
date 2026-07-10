@@ -46,10 +46,10 @@ func (createBranchItem) Current() bool       { return false }
 
 func branchColumns() []tui.Column {
 	return []tui.Column{
-		{Title: "branch", MinWidth: 12, Flex: true, Density: tui.DensityShort},
+		{Title: "branch", MinWidth: 12, Flex: true, Density: tui.DensityShort, Color: tui.ColorName},
 		{Title: "last commit", MaxWidth: 50, Density: tui.DensityNormal},
-		{Title: "date", MinWidth: 10, Density: tui.DensityNormal},
-		{Title: "author", MinWidth: 10, Density: tui.DensityFull},
+		{Title: "date", MinWidth: 10, Density: tui.DensityNormal, Color: tui.ColorDate},
+		{Title: "author", MinWidth: 10, Density: tui.DensityFull, Color: tui.ColorAuthor},
 	}
 }
 
@@ -364,6 +364,21 @@ func buildBranchOperations(ctx context.Context, r *git.Runner, f branchFilters, 
 		return tea.Batch(tui.Status(status), refresh())
 	}
 
+	// oldestFirst orders bulk-delete targets from the oldest last-commit to the
+	// newest, so a resilient delete run peels stale branches off first.
+	oldestFirst := func(items []tui.Item) []tui.Item {
+		out := append([]tui.Item(nil), items...)
+		sort.SliceStable(out, func(i, j int) bool {
+			bi, iok := out[i].(branchItem)
+			bj, jok := out[j].(branchItem)
+			if !iok || !jok {
+				return iok && !jok
+			}
+			return bi.b.CommitUnix < bj.b.CommitUnix
+		})
+		return out
+	}
+
 	return []tui.Operation{
 		{
 			Name: "checkout", Key: "C", Scope: tui.ScopeItem,
@@ -491,58 +506,51 @@ func buildBranchOperations(ctx context.Context, r *git.Runner, f branchFilters, 
 			},
 		},
 		{
+			// Bulk archive/delete run as resilient batches (BatchSpec): a branch
+			// that fails to delete pauses to ask whether to continue instead of
+			// aborting the whole run, and targets are peeled oldest-first.
 			Name: "archive", Scope: tui.ScopeItem, BulkOnly: true,
 			Confirm: &tui.Confirm{Kind: tui.ConfirmYesNo, Prompt: "Archive the selected branch(es)? (tag archive/<name> and delete)"},
-			Run: func(c tui.OpContext) tea.Cmd {
-				targets := targetBranches(c.Items)
-				for _, b := range targets {
+			Batch: &tui.BatchSpec{
+				Verb:  "archived",
+				Order: oldestFirst,
+				Step: func(it tui.Item) error {
+					b := it.(branchItem)
 					sha, err := git.RevParse(ctx, r, b.b.Name)
 					if err != nil {
-						return tui.Status(err.Error())
+						return err
 					}
 					if err := git.TagRef(ctx, r, "archive/"+b.b.Name, sha); err != nil {
-						return tui.Status(err.Error())
+						return err
 					}
-					if err := git.DeleteBranch(ctx, r, b.b.Name, true); err != nil {
-						return tui.Status(err.Error())
-					}
-				}
-				return refreshWith(plural("archived", len(targets)))
+					return git.DeleteBranch(ctx, r, b.b.Name, true)
+				},
+				Refresh: refresh,
 			},
 		},
 		{
 			Name: "delete", Scope: tui.ScopeItem, BulkOnly: true,
 			Confirm: &tui.Confirm{Kind: tui.ConfirmTyped, Prompt: "Delete the selected branches?", Phrase: "delete all"},
-			Run: func(c tui.OpContext) tea.Cmd {
-				targets := targetBranches(c.Items)
-				for _, b := range targets {
-					if err := git.DeleteBranch(ctx, r, b.b.Name, false); err != nil {
-						return tui.Status(err.Error())
-					}
-				}
-				return refreshWith(plural("deleted", len(targets)))
+			Batch: &tui.BatchSpec{
+				Verb:  "deleted",
+				Order: oldestFirst,
+				Step: func(it tui.Item) error {
+					return git.DeleteBranch(ctx, r, it.(branchItem).b.Name, false)
+				},
+				Refresh: refresh,
 			},
 		},
 		{
 			Name: "force delete", Scope: tui.ScopeItem, BulkOnly: true,
 			Confirm: &tui.Confirm{Kind: tui.ConfirmTyped, Prompt: "Force-delete the selected branches?", Phrase: "force delete"},
-			Run: func(c tui.OpContext) tea.Cmd {
-				targets := targetBranches(c.Items)
-				for _, b := range targets {
-					if err := git.DeleteBranch(ctx, r, b.b.Name, true); err != nil {
-						return tui.Status(err.Error())
-					}
-				}
-				return refreshWith(plural("force-deleted", len(targets)))
+			Batch: &tui.BatchSpec{
+				Verb:  "force-deleted",
+				Order: oldestFirst,
+				Step: func(it tui.Item) error {
+					return git.DeleteBranch(ctx, r, it.(branchItem).b.Name, true)
+				},
+				Refresh: refresh,
 			},
 		},
 	}
-}
-
-func plural(verb string, n int) string {
-	unit := " branch"
-	if n != 1 {
-		unit = " branches"
-	}
-	return verb + " " + fmt.Sprint(n) + unit
 }

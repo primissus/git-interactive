@@ -31,8 +31,8 @@ func (i rebaseStepItem) Current() bool       { return i.isHead }
 
 func rebaseColumns() []tui.Column {
 	return []tui.Column{
-		{Title: "op", MinWidth: 6, Density: tui.DensityShort},
-		{Title: "sha", MinWidth: 7, Density: tui.DensityShort},
+		{Title: "op", MinWidth: 6, Density: tui.DensityShort, Color: tui.ColorName},
+		{Title: "sha", MinWidth: 7, Density: tui.DensityShort, Color: tui.ColorSHA},
 		{Title: "message", MinWidth: 12, Flex: true, Density: tui.DensityShort},
 	}
 }

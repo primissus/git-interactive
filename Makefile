@@ -6,7 +6,18 @@ CMD := ./cmd/gint
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -ldflags "-X main.version=$(VERSION)"
 
-.PHONY: build install test lint fmt
+.PHONY: help build install test lint fmt
+
+help:
+	@echo "Usage: make [target]"
+	@echo ""
+	@echo "Targets:"
+	@echo "  help     Show this help message"
+	@echo "  build    Build the gint binary"
+	@echo "  install  Install gint to GOPATH/bin"
+	@echo "  test     Run tests with race detector"
+	@echo "  lint     Run golangci-lint"
+	@echo "  fmt      Format code with gofmt and run go vet"
 
 build:
 	go build $(LDFLAGS) -o $(BINARY) $(CMD)

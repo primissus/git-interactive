@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/mattn/go-runewidth"
 )
 
@@ -107,21 +108,43 @@ func (l *List) rows(widths []int) string {
 	cols := l.visibleColumns()
 	rows := l.pageRows()
 
+	// Pre-build per-column tint styles once for the whole page.
+	colStyles := make([]lipgloss.Style, len(cols))
+	for j, c := range cols {
+		if c.Color != nil {
+			colStyles[j] = lipgloss.NewStyle().Foreground(c.Color)
+		}
+	}
+
 	var b strings.Builder
 	for i := l.top; i < l.top+rows && i < len(l.visible); i++ {
 		itemIdx := l.visible[i]
 		it := l.items[itemIdx]
+		highlighted := i == l.cursor
+		current := it.Current()
+		// A cursor or current row wears one whole-row style, so per-column tints
+		// are suppressed to keep the highlight uniform and avoid SGR-reset cuts.
+		plainRow := !highlighted && !current
 
 		cells := make([]string, len(cols))
 		for j, c := range cols {
-			cells[j] = fitCell(cell(it, l.columnIndex(c)), widths[j])
+			cv := fitCell(cell(it, l.columnIndex(c)), widths[j])
+			if plainRow {
+				switch {
+				case c.Render != nil:
+					cv = c.Render(cv)
+				case c.Color != nil:
+					cv = colStyles[j].Render(cv)
+				}
+			}
+			cells[j] = cv
 		}
-		line := l.rowPrefix(itemIdx) + strings.Join(cells, colGap)
+		line := l.rowPrefix(itemIdx, highlighted) + strings.Join(cells, colGap)
 
 		switch {
-		case i == l.cursor:
+		case highlighted:
 			line = l.styles.RowSelected.Render(line)
-		case it.Current():
+		case current:
 			line = l.styles.RowCurrent.Render(line)
 		default:
 			line = l.styles.Row.Render(line)
@@ -144,16 +167,27 @@ func (l *List) prefixWidth() int {
 }
 
 // rowPrefix renders the current-item dot marker and, in select mode, the
-// selection checkbox for the given item index.
-func (l *List) rowPrefix(itemIdx int) string {
+// selection checkbox for the given item index. On the highlighted (cursor) row
+// the glyphs are emitted unstyled so the row's own background spans the whole
+// line — a pre-styled glyph carries an SGR reset that would otherwise cut the
+// highlight short at the marker/checkbox.
+func (l *List) rowPrefix(itemIdx int, highlighted bool) string {
 	marker := "  "
 	if l.items[itemIdx].Current() {
-		marker = l.styles.Marker.Render("●") + " "
+		if highlighted {
+			marker = "● "
+		} else {
+			marker = l.styles.Marker.Render("●") + " "
+		}
 	}
 	if l.selectMode {
 		box := "[ ] "
 		if l.selected[itemIdx] {
-			box = l.styles.Checkbox.Render("[x]") + " "
+			if highlighted {
+				box = "[x] "
+			} else {
+				box = l.styles.Checkbox.Render("[x]") + " "
+			}
 		}
 		return marker + box
 	}
@@ -170,17 +204,77 @@ func (l *List) footer() string {
 		return l.confirm.View()
 	case modeInput:
 		return l.input.View()
+	case modeBatchPrompt:
+		return l.batchPromptView()
+	case modeHelp:
+		return l.helpView()
 	}
 
-	help := "/ search · enter menu · shift+x select · q quit"
+	help := "j/k move · u/d ½page · / search · enter menu · X select · ? help · q quit"
 	if l.selectMode {
-		help = fmt.Sprintf("space toggle · enter bulk ops · esc exit · %d selected", len(l.selected))
+		help = fmt.Sprintf("space/x toggle · enter bulk ops · esc exit · %d selected", len(l.selected))
 	}
 	footer := l.styles.Help.Render(help)
 	if l.status != "" {
 		footer = l.styles.Status.Render(l.status) + "\n" + footer
 	}
 	return footer
+}
+
+// helpView renders the "?" overlay: the built-in navigation keys plus this
+// view's own operation shortcuts, read live from its registry.
+func (l *List) helpView() string {
+	nav := [][2]string{
+		{"j / k", "move down / up"},
+		{"u / d", "half-page down / up"},
+		{"h / l", "page back / forward"},
+		{"g / G", "jump to top / bottom"},
+		{"10j", "repeat a motion N times"},
+		{"/", "fuzzy search"},
+		{"enter", "open menu"},
+		{"X", "select mode"},
+		{"space / x", "toggle selection"},
+		{"?", "this help"},
+		{"q", "quit"},
+	}
+
+	keyW := 0
+	for _, r := range nav {
+		if w := runewidth.StringWidth(r[0]); w > keyW {
+			keyW = w
+		}
+	}
+	for _, op := range l.ops {
+		if op.Key != "" && runewidth.StringWidth(op.Key) > keyW {
+			keyW = runewidth.StringWidth(op.Key)
+		}
+	}
+
+	var b strings.Builder
+	b.WriteString(l.styles.ConfirmPrompt.Render("Navigation"))
+	b.WriteByte('\n')
+	for _, r := range nav {
+		fmt.Fprintf(&b, "%s  %s\n", l.styles.Status.Render(fitCell(r[0], keyW)), r[1])
+	}
+
+	var opLines []string
+	for _, op := range l.ops {
+		if op.Key == "" {
+			continue
+		}
+		opLines = append(opLines, fmt.Sprintf("%s  %s", l.styles.Status.Render(fitCell(op.Key, keyW)), op.Name))
+	}
+	if len(opLines) > 0 {
+		b.WriteByte('\n')
+		b.WriteString(l.styles.ConfirmPrompt.Render("Operations"))
+		b.WriteByte('\n')
+		b.WriteString(strings.Join(opLines, "\n"))
+		b.WriteByte('\n')
+	}
+
+	b.WriteByte('\n')
+	b.WriteString(l.styles.Help.Render("any key closes"))
+	return l.styles.Overlay.Render(b.String())
 }
 
 // fitCell pads s with spaces to width, or truncates it with an ellipsis when it

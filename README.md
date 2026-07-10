@@ -53,12 +53,21 @@ use, e.g. `gint branch -b feature/login`, `gint commit -I "message"`,
 
 ### `worktree` checkout
 
-`gint worktree` checkout prints the selected worktree's path (a subprocess can't
-change your shell's directory). Wrap it in a shell function to actually `cd`:
+A subprocess can't change your shell's directory, so `gint worktree` checkout
+hands the chosen path back to the shell. Install the wrapper once and checkout
+will `cd` for you:
 
 ```sh
-gintcd() { cd "$(gint worktree "$@")"; }
+# bash / zsh — add to ~/.bashrc or ~/.zshrc:
+eval "$(gint shell-init zsh)"
+# fish — add to ~/.config/fish/config.fish:
+gint shell-init fish | source
 ```
+
+The wrapper runs the real binary with a temp `--cd-file`, then `cd`s to whatever
+worktree you checked out; every other `gint` command passes straight through.
+Without the wrapper, checkout still prints the path as its final line, so
+`cd "$(gint worktree)"` works as a fallback.
 
 ## Interaction model
 
@@ -66,14 +75,19 @@ All interactive views share the same keys:
 
 | Key | Action |
 |---|---|
-| `↑`/`k`, `↓`/`j` | move cursor |
+| `↑`/`k`, `↓`/`j` | move cursor (prefix with a count, e.g. `10j`) |
+| `u` / `d` (or `Ctrl+U`/`Ctrl+D`) | half-page up / down |
 | `←`/`h`, `→`/`l`, `PgUp`/`PgDn` | page |
 | `g` / `G` | jump to top / bottom |
 | `/` | fuzzy search |
 | `Enter` | open the context menu for the current row |
-| `Shift+X` | select mode (space to toggle rows, Enter for bulk operations) |
+| `Shift+X` | select mode (`space`/`x` toggle rows, Enter for bulk operations) |
+| `?` | show all keys and this view's operations |
 | `Esc` | close search / leave select mode / clear status |
 | `q`, `Ctrl+C` | quit |
+
+(`u`/`d` fall back to their operation binding — e.g. unstage / diff — in views
+that define one.)
 
 Common operation shortcuts (available where the operation applies):
 

@@ -5,6 +5,8 @@
 // (Operations); it never reimplements the interactions.
 package tui
 
+import "github.com/charmbracelet/lipgloss"
+
 // Item is a single row in a list view. Command packages implement it on their
 // own row types (a branch, a commit, a stash…).
 type Item interface {
@@ -40,6 +42,14 @@ type Column struct {
 	// full views but hides it in the short view; DensityShort keeps it always
 	// visible; DensityFull restricts it to the full view.
 	Density Density
+	// Color, when set, tints this column's cells on ordinary rows (not the
+	// cursor row or the current item, whose whole-row styles take over). It gives
+	// each column its own hue so a wide table stays scannable.
+	Color lipgloss.TerminalColor
+	// Render, when set, decorates a fitted cell for ordinary rows and must
+	// preserve its display width (wrap runes in SGR escapes, never add or drop
+	// visible characters). It overrides Color and backs per-lane graph coloring.
+	Render func(string) string
 }
 
 // Density selects how much each row shows, driven by the -F/--full and

@@ -72,6 +72,24 @@
 - **Decision:** the `checkout` operation quits the TUI and prints the selected worktree's path as the program's final stdout line; it does not attempt to change the parent shell's directory.
 - **Why:** a `gint` subprocess cannot mutate its parent shell's cwd. Printing the path is the standard pattern for this class of tool — a shell function/alias (e.g. `gintcd() { cd "$(gint worktree "$@")"; }`) can wrap it to actually `cd`. Documented here rather than shipping a shell integration script, since none exists yet.
 - **Rejected:** writing the path to a fixed temp file — no benefit over stdout for this case, and adds a stale-file failure mode.
+- **Status:** superseded by "worktree checkout cd via shell-init + --cd-file" below.
+
+## 2026-07 · worktree checkout cd via `shell-init` + `--cd-file` (post-v1 feedback)
+- **Decision:** ship a `gint shell-init [bash|zsh|fish]` command that prints a `gint()` wrapper function; the wrapper runs the real binary with a temp `--cd-file` and `cd`s to the path checkout writes there. The hidden `--cd-file` flag on `worktree` takes the checkout path instead of stdout when set; bare-stdout printing remains the fallback for users without the wrapper.
+- **Why:** the print-to-stdout mechanism is unreliable in practice — the interactive view runs under `tea.WithAltScreen`, whose escape sequences also go to stdout, so `cd "$(gint worktree)"` captures terminal noise, not just the path. Handing the path off through a caller-provided file sidesteps stdout entirely and makes the common case (`eval "$(gint shell-init zsh)"`) just work. `shell-init` is exempt from the repo-check `PersistentPreRunE` since it's evaluated from shell rc files outside any repo.
+- **Rejected:** a *fixed* temp file (stale-file races, the original rejection) — the wrapper mints a fresh `mktemp` file per call; rendering the TUI to `/dev/tty`/stderr so stdout stays clean (larger change, and the file handoff is more robust across shells).
+- **Status:** current
+
+## 2026-07 · resilient bulk delete — per-failure prompt, oldest-first (post-v1 feedback)
+- **Decision:** destructive bulk operations run through `tui.BatchSpec` (set on `Operation.Batch` instead of `Run`) rather than a straight-line loop. The `List` processes targets one at a time; a failing item pauses in `modeBatchPrompt` asking continue/stop/all (`y`/`n`/`a`), then finishes with a `deleted N · failed M (reasons)` summary. `branch` delete/force-delete/archive order targets oldest-commit-first via an `oldestFirst` comparator on `CommitUnix`.
+- **Why:** the previous loops returned on the first error, stranding the rest of a bulk delete with no recourse. Peeling stale branches oldest-first and surviving per-item failures is what the user expects from a bulk cleanup. Steps run synchronously inside `Update` (like `Run`), pausing only to render the prompt, so no goroutine/message plumbing is needed.
+- **Rejected:** plow-through-and-summarize with no prompt (loses the user's per-failure control they asked for); collecting failures silently (the old loop's abort was already too quiet).
+- **Status:** current
+
+## 2026-07 · shared-view polish: highlight, per-column color, nav, help (post-v1 feedback)
+- **Decision:** several shared-`List` refinements: (1) the current/cursor row's marker and select checkbox render **unstyled** on the highlighted row so the row background spans the whole line — a pre-styled glyph's SGR reset was cutting the highlight short; (2) `Column.Color`/`Column.Render` tint each column on ordinary rows (suppressed on the cursor/current row), with `ColorizeGraphPrefix` coloring graph lanes by column position; (3) navigation gains a numeric count prefix (`10j`), `u`/`d` (and `Ctrl+U`/`Ctrl+D`) half-page jumps, and a `?` help overlay listing nav + this view's operations; (4) `x` toggles selection in select mode; (5) the bulk menu now also offers `ScopeList` operations so select-mode views (e.g. `add`) surface stage-all / clean / restore, not just item-bulk ops.
+- **Why:** direct user feedback on v1. `u`/`d` yield to a view's own binding when one exists (unstage in `add`, diff in `status`/`stash`), so half-page nav is additive, not a regression. Per-column `Render` must preserve display width (SGR-wrap only) because the table renderer measures with `runewidth`; the non-interactive `-I` renderer stays plain.
+- **Rejected:** global `u`/`d` that shadow view operations; embedding ANSI in cell content before width measurement (breaks alignment); a separate help program (an overlay reuses the existing footer slot).
 - **Status:** current
 
 ## 2026-07 · rebase driven by a generated todo, not `-i` in an editor (phase 7)

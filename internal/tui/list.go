@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"strconv"
+
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -15,6 +17,8 @@ const (
 	modeMenu
 	modeConfirm
 	modeInput
+	modeBatchPrompt
+	modeHelp
 )
 
 // List is gint's shared interactive view: a paginated, navigable, fuzzy-
@@ -41,12 +45,14 @@ type List struct {
 	selectMode bool
 	selected   map[int]bool // item indices currently selected
 
-	mode    mode
-	search  textinput.Model
-	menu    menuModel
-	confirm confirmModel
-	input   inputModel
-	pending *pending // operation awaiting input/confirmation
+	mode     mode
+	search   textinput.Model
+	menu     menuModel
+	confirm  confirmModel
+	input    inputModel
+	pending  *pending  // operation awaiting input/confirmation
+	batch    *batchRun // in-flight resilient bulk operation
+	countBuf string    // digits typed as a motion count prefix (e.g. "10" in 10j)
 
 	styles        Styles
 	status        string
@@ -170,6 +176,11 @@ func (l *List) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return l, l.updateConfirm(msg)
 	case modeInput:
 		return l, l.updateInput(msg)
+	case modeBatchPrompt:
+		return l, l.updateBatchPrompt(msg)
+	case modeHelp:
+		l.updateHelp(msg)
+		return l, nil
 	default:
 		return l.updateList(msg)
 	}
@@ -180,19 +191,43 @@ func (l *List) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if !ok {
 		return l, nil
 	}
+	ks := key.String()
 
-	switch key.String() {
+	// A digit starts/extends a motion count prefix (e.g. "10j"). A leading "0"
+	// is not a count (reserved for a future line-start motion); it falls through.
+	if len(ks) == 1 && ks[0] >= '1' && ks[0] <= '9' || (l.countBuf != "" && ks == "0") {
+		l.countBuf += ks
+		return l, nil
+	}
+	n := l.takeCount() // count prefix (default 1), cleared for the coming motion
+
+	switch ks {
 	case "q", "ctrl+c":
 		l.quitting = true
 		return l, tea.Quit
 	case "up", "k":
-		l.moveCursor(-1)
+		l.moveCursor(-n)
 	case "down", "j":
-		l.moveCursor(1)
+		l.moveCursor(n)
 	case "left", "h", "pgup":
-		l.page(-1)
+		l.page(-n)
 	case "right", "l", "pgdown":
-		l.page(1)
+		l.page(n)
+	case "ctrl+u":
+		l.moveCursor(-n * l.halfPage())
+	case "ctrl+d":
+		l.moveCursor(n * l.halfPage())
+	case "u", "d":
+		// u/d are half-page jumps unless the current view binds them to an
+		// operation (e.g. unstage/diff), which takes precedence.
+		if op, ok := l.shortcuts[ks]; ok {
+			return l, l.startOp(op)
+		}
+		dir := 1
+		if ks == "u" {
+			dir = -1
+		}
+		l.moveCursor(dir * n * l.halfPage())
 	case "g", "home":
 		l.cursor, l.top = 0, 0
 	case "G", "end":
@@ -202,10 +237,20 @@ func (l *List) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 		l.mode = modeSearch
 		l.search.Focus()
 		return l, textinput.Blink
+	case "?":
+		l.mode = modeHelp
 	case "X":
 		l.toggleSelectMode()
 	case " ":
 		l.toggleSelection()
+	case "x":
+		// In select mode "x" toggles the row (matching the [x] checkbox);
+		// otherwise it falls through to any view shortcut bound to "x".
+		if l.selectMode {
+			l.toggleSelection()
+		} else if op, ok := l.shortcuts["x"]; ok {
+			return l, l.startOp(op)
+		}
 	case "enter":
 		return l, l.openMenuForContext()
 	case "esc":
@@ -215,11 +260,37 @@ func (l *List) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 			l.status = ""
 		}
 	default:
-		if op, ok := l.shortcuts[key.String()]; ok {
+		if op, ok := l.shortcuts[ks]; ok {
 			return l, l.startOp(op)
 		}
 	}
 	return l, nil
+}
+
+// takeCount returns the pending motion count (default 1) and clears the buffer.
+func (l *List) takeCount() int {
+	if l.countBuf == "" {
+		return 1
+	}
+	n, err := strconv.Atoi(l.countBuf)
+	l.countBuf = ""
+	if err != nil || n < 1 {
+		return 1
+	}
+	return n
+}
+
+// halfPage is half the viewport height, the distance ctrl+u / ctrl+d (and the
+// unbound u / d) jump.
+func (l *List) halfPage() int {
+	return max(1, l.pageRows()/2)
+}
+
+// updateHelp dismisses the shortcut overlay on any key.
+func (l *List) updateHelp(msg tea.Msg) {
+	if _, ok := msg.(tea.KeyMsg); ok {
+		l.mode = modeList
+	}
 }
 
 // --- navigation -----------------------------------------------------------
@@ -338,11 +409,16 @@ func (l *List) itemOps() []Operation {
 	return out
 }
 
-// bulkOps are the operations offered over a multi-row selection.
+// bulkOps are the operations offered over a multi-row selection: item-scoped
+// operations marked Bulk/BulkOnly, plus view-wide (ScopeList) operations, which
+// stay applicable regardless of the selection (e.g. "stage all", "clean").
 func (l *List) bulkOps() []Operation {
 	var out []Operation
 	for _, op := range l.ops {
-		if op.Scope == ScopeItem && (op.Bulk || op.BulkOnly) {
+		switch {
+		case op.Scope == ScopeList:
+			out = append(out, op)
+		case op.Scope == ScopeItem && (op.Bulk || op.BulkOnly):
 			out = append(out, op)
 		}
 	}
@@ -400,6 +476,9 @@ func (l *List) runConfirm(op Operation, items []Item, input string) tea.Cmd {
 func (l *List) exec(op Operation, items []Item, input, choice string) tea.Cmd {
 	l.mode = modeList
 	l.pending = nil
+	if op.Batch != nil {
+		return l.startBatch(op, items)
+	}
 	if l.selectMode {
 		l.exitSelectMode()
 	}
