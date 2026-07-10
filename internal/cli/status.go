@@ -108,9 +108,10 @@ func runStatus(cmd *cobra.Command, _ []string) error {
 }
 
 // buildStatusOperations returns status's operation registry: stage/unstage
-// toggle, diff, discard, per-file stash, commit/amend stubs (real flow
-// arrives in phase 6), and conflict continue/abort via git.InProgressState —
-// the interface phase 7's resolve-conflicts command will share.
+// toggle, diff, discard, per-file stash, commit/amend (delegating to the same
+// choice logic as the standalone `commit` command), and conflict
+// continue/abort via git.InProgressState — the interface phase 7's
+// resolve-conflicts command will share.
 func buildStatusOperations(ctx context.Context, r *git.Runner) []tui.Operation {
 	refresh := func() tea.Cmd {
 		items, err := loadStatusItems(ctx, r)
@@ -197,17 +198,31 @@ func buildStatusOperations(ctx context.Context, r *git.Runner) []tui.Operation {
 			},
 		},
 		{
-			// Stubbed until the real `commit` flow lands in phase 6
-			// (PLAN.md → status task 2); status then delegates to it.
+			// Delegates to the same choice logic as the standalone `commit`
+			// command (PLAN.md → status task 2). The shared List's Confirm
+			// has no "return to input" transition like the standalone
+			// command's Flow does, so choosing "edit" here just cancels —
+			// press 'c' again to retype the message.
 			Name: "commit", Key: "c", Scope: tui.ScopeList,
+			Input:   &tui.InputSpec{Prompt: "Commit message"},
+			Confirm: &tui.Confirm{Kind: tui.ConfirmChoice, Prompt: "Commit?", Choices: commitConfirmChoices()},
 			Run: func(c tui.OpContext) tea.Cmd {
-				return tui.Status("commit is not yet implemented (arrives in phase 6)")
+				status, err := runCommitChoice(ctx, r, c.Input, c.Choice)
+				if err != nil {
+					return tui.Status(err.Error())
+				}
+				return refreshWith(status)
 			},
 		},
 		{
 			Name: "amend", Key: "A", Scope: tui.ScopeList,
+			Confirm: &tui.Confirm{Kind: tui.ConfirmYesNo, Prompt: "Amend the last commit? (keeps its message)"},
 			Run: func(c tui.OpContext) tea.Cmd {
-				return tui.Status("amend is not yet implemented (arrives in phase 6)")
+				status, err := runCommitChoice(ctx, r, "", "amend")
+				if err != nil {
+					return tui.Status(err.Error())
+				}
+				return refreshWith(status)
 			},
 		},
 	}

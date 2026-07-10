@@ -38,6 +38,18 @@
 - **Rejected:** implementing literal branch-shaped delete/rename/pull/push against a commit's SHA — no sensible git operation backs them.
 - **Status:** current
 
+## 2026-07 · commit/merge as standalone Flow commands
+- **Decision:** `commit` and `merge` are the first commands with no list to select from, so they get a new shared `internal/tui.Flow` component (message input → multi-choice confirm, with an "edit" choice that loops back to the input) instead of `internal/tui.List`. Wiring the same choice logic into `status`'s inline commit/amend and `branch`/`log`/`graph`'s merge-into-current reuses `List`'s existing Input+Confirm operation chaining — no second List-hosted flow component was needed for those.
+- **Why:** `List`'s Input+Confirm chaining already covers "message then choice" for operations *inside* an existing list; `commit`/`merge` invoked standalone have no rows to hang an Operation off, so they need their own minimal `tea.Model`. Nesting a second `tea.Program` inside a running `List`'s `tea.Program` isn't supported by Bubble Tea (unlike `tea.ExecProcess`, which hands off to an *external* process, not another `tea.Model`), which is why status's commit/amend do NOT launch a `Flow` — they run inline as ordinary `List` operations instead.
+- **Rejected:** giving status's commit/amend a nested `Flow` (not supported without releasing/reacquiring the terminal manually) and giving `commit`/`merge` their own hand-rolled input/confirm loop duplicating `List`'s already-built `inputModel`/`confirmModel`.
+- **Status:** current
+
+## 2026-07 · merge has no -I/non-interactive mode
+- **Decision:** `gint merge` always launches its confirm Flow; it does not support `-I/--no-interactive` the way list-backed commands do.
+- **Why:** merge is a one-shot confirmation wizard, not a list with a tabular alternative — there's no "table of rows" for `-I` to print. `commit -I <message>` remains supported since a plain commit has an unambiguous non-interactive form (message + implicit "yes"); merge's mode choice (default/ff-only/no-ff/squash) doesn't have an equally obvious default to assume non-interactively.
+- **Rejected:** defaulting `-I` to `MergeDefault` silently — a merge is exactly the kind of operation PROMPT.md's shared model says should always confirm; skipping that under `-I` would violate the "destructive operations always confirm" rule for a command that can produce conflicts.
+- **Status:** current
+
 ## 2026-07 · status's "Enter toggles stage" vs. the shared List's Enter
 - **Decision:** `status`'s stage/unstage toggle is bound to the `t` key and listed first in the item context menu, not bound directly to Enter.
 - **Why:** PROMPT.md specifies "Enter: toggle stage/unstage for the selected file", but phase 2's shared `internal/tui.List` always uses Enter to open the context menu — every other view (and the framework's own key-handling switch) depends on that invariant. Special-casing Enter for one view would break the "commands never reimplement interactions" rule from `.context/conventions.md`.

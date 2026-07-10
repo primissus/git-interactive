@@ -279,15 +279,32 @@ func buildLogOperations(ctx context.Context, r *git.Runner, full bool) []tui.Ope
 			},
 		},
 		{
-			// Stubbed until the real `merge` flow lands in phase 6, matching
-			// branch's Shift+M seam (PLAN.md → log task 2).
 			Name: "merge into current", Key: "M", Scope: tui.ScopeItem,
-			Confirm: &tui.Confirm{Kind: tui.ConfirmYesNo, Prompt: "Merge the branch at this commit into the current branch?"},
+			Confirm: &tui.Confirm{Kind: tui.ConfirmChoice, Prompt: "Merge the branch at this commit into the current branch?", Choices: mergeConfirmChoices()},
 			Run: func(c tui.OpContext) tea.Cmd {
-				return tui.Status("merge is not yet implemented (arrives in phase 6)")
+				commit, ok := targetCommit(c.Items)
+				if !ok {
+					return tui.Status("select a commit first")
+				}
+				branch, ok := firstRef(commit.c.Refs)
+				if !ok {
+					return tui.Status("no local branch points at this commit")
+				}
+				if _, err := runMergeChoice(ctx, r, branch, c.Choice); err != nil {
+					return tui.Status(err.Error())
+				}
+				return refreshWith("merged " + branch)
 			},
 		},
 	}
+}
+
+// firstRef returns a commit's first local branch ref, if any.
+func firstRef(refs []string) (string, bool) {
+	if len(refs) == 0 {
+		return "", false
+	}
+	return refs[0], true
 }
 
 func plural2(unit string, n int) string {

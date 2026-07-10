@@ -191,11 +191,21 @@ func buildGraphOperations(ctx context.Context, r *git.Runner, notAll, simplify, 
 			},
 		},
 		{
-			// Stubbed until phase 6, same seam as branch/log.
 			Name: "merge into current", Key: "M", Scope: tui.ScopeItem,
-			Confirm: &tui.Confirm{Kind: tui.ConfirmYesNo, Prompt: "Merge the branch at this commit into the current branch?"},
+			Confirm: &tui.Confirm{Kind: tui.ConfirmChoice, Prompt: "Merge the branch at this commit into the current branch?", Choices: mergeConfirmChoices()},
 			Run: func(c tui.OpContext) tea.Cmd {
-				return tui.Status("merge is not yet implemented (arrives in phase 6)")
+				g, ok := targetGraphCommit(c.Items)
+				if !ok {
+					return tui.Status("select a commit first")
+				}
+				branch, ok := firstRef(g.row.Commit.Refs)
+				if !ok {
+					return tui.Status("no local branch points at this commit")
+				}
+				if _, err := runMergeChoice(ctx, r, branch, c.Choice); err != nil {
+					return tui.Status(err.Error())
+				}
+				return refreshWith("merged " + branch)
 			},
 		},
 	}

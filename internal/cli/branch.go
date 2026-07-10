@@ -458,14 +458,25 @@ func buildBranchOperations(ctx context.Context, r *git.Runner, f branchFilters, 
 			},
 		},
 		{
-			// PROMPT.md branch → Shift+M merge selected into current; stubbed
-			// until the real `merge` flow lands in phase 6 (see PLAN.md task 2
-			// and .context/decisions.md). Keep the seam narrow: only Run needs
-			// to change in phase 6.
+			// PROMPT.md branch → Shift+M merge selected into current, reusing
+			// the `merge` command's confirmation flow (mergeConfirmChoices).
 			Name: "merge into current", Key: "M", Scope: tui.ScopeItem, Bulk: true,
-			Confirm: &tui.Confirm{Kind: tui.ConfirmYesNo, Prompt: "Merge the selected branch(es) into the current branch?"},
+			Confirm: &tui.Confirm{Kind: tui.ConfirmChoice, Prompt: "Merge the selected branch(es) into the current branch?", Choices: mergeConfirmChoices()},
 			Run: func(c tui.OpContext) tea.Cmd {
-				return tui.Status("merge is not yet implemented (arrives in phase 6)")
+				targets := targetBranches(c.Items)
+				if len(targets) == 0 {
+					return tui.Status("select a branch first")
+				}
+				for _, b := range targets {
+					if _, err := runMergeChoice(ctx, r, b.b.Name, c.Choice); err != nil {
+						return tui.Status(err.Error())
+					}
+				}
+				names := make([]string, len(targets))
+				for i, b := range targets {
+					names[i] = b.b.Name
+				}
+				return refreshWith("merged " + strings.Join(names, ", "))
 			},
 		},
 		{

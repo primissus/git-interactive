@@ -35,25 +35,3 @@ func newRebaseCmd() *cobra.Command {
 	cmd.RunE = stubRun("rebase")
 	return cmd
 }
-
-func newMergeCmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:     "merge",
-		Aliases: []string{"mrg"},
-		Short:   "Merge branches",
-	}
-	attachCommonFlags(cmd)
-	cmd.RunE = stubRun("merge")
-	return cmd
-}
-
-func newCommitCmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:     "commit",
-		Aliases: []string{"cm"},
-		Short:   "Commit staged changes",
-	}
-	attachCommonFlags(cmd)
-	cmd.RunE = stubRun("commit")
-	return cmd
-}

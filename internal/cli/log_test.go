@@ -16,6 +16,15 @@ func TestAuthorInitial(t *testing.T) {
 	}
 }
 
+func TestFirstRef(t *testing.T) {
+	if got, ok := firstRef(nil); ok || got != "" {
+		t.Errorf("firstRef(nil) = %q, %v; want \"\", false", got, ok)
+	}
+	if got, ok := firstRef([]string{"main", "other"}); !ok || got != "main" {
+		t.Errorf("firstRef([main, other]) = %q, %v; want main, true", got, ok)
+	}
+}
+
 func TestPlural2(t *testing.T) {
 	if got := plural2("commit", 1); got != "1 commit" {
 		t.Errorf("plural2(commit, 1) = %q, want %q", got, "1 commit")
