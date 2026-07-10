@@ -1,36 +1,170 @@
-This repo is used to create a list of commands (alias "gint", format "command subcommand [options]")under a single command called git-interact. The list of commands that this repo will enable are basically one:
+# git-interact (`gint`)
 
-  * branch (alias br):  will show a tabular list the list of branches in interactive mode. Shows branch name, last commit, last author, relative date. This command will enable navigation between branches with arrow
-  functions. It should mimic most of the relevant interactions that git is capable of: sort (last commit, created, author, off), filter (Author, date (last 1 day, 3 days, 1 week, 1 month, year to date, 1 year), what else?),
-  search (fuzzy find), . When a user presses "Enter" a menu will be displayed: Checkout, Delete (ask for confirmation, with an option to force delete that asks to enter word "force" as confirmation), pull, push, rename.
-  Also in the list there should be an option above of the list (default focus on first branch) to create a new branch. Search is enabled with "/", "shift + N" (new) creates, "shift + C" (checkout), "shift + D" (delete),
-  "shift + R" (rename), "p" pull, "shift + P" push (shortcuts ask for confirmation too). Command accepts arguments by default --sort | -S, --no-interactive | -I (just prints tabular), --new | -b create branch, --delete | -D
-  delete, -i | --interactive, -m | --rename, --full | -F shows full command message line and date and author name, --short | -s only branch name. Tab is paginated taken height of the terminal/viewport (as less). Also supports VIM motions h j k l. "gint branch [branchname]" (no options) will show you a menu expecting
-  input, supports fuzzy match (pull minus, Push mayus for disambiguate). Also add option to "copy sha", with shortcut. Colors show current and a Dot marker. Also supports select mode "shift + X" that shows bulk operations: archive (add tag `archive/<branch-name>` and delete branch), delete (confirmation asks to enter "delete all"), force delete (confirmation asks "force delete"). Also consider merge operation
+Build a CLI tool called **git-interact** (alias `gint`) that wraps common git operations in interactive, navigable TUI views. Command format: `gint <command> [subcommand] [options]`.
 
-  * worktree (alias wt): also a list, shows the worktree path (shortest: relative or absolute with "~" alias) , branch, commit and relative date. Also navigatable, operations: checkout (move to dir), search fuzzy, sort,
-  filter, search, delete, fetch (or pull), push, rename branch, what else?. Same shortcuts ans arguments as branch.
+## Shared interaction model
 
-  * graph-branch (alias grb): graphs branches with last commit only. options: --A | --not-all (current branch is base, all by default). Interactions similar to branch, accordingly.
+All interactive views behave consistently:
 
-  * log (alias lg): Similar to branches: shows commit sha (short), message (shortens), relative date, author (Short name, last name initial), and branches (local only by default, separated by commands) and worktree dir. Operations: similar as branch and cherry-pick "c" (confirmations shows no, yes, no commit, relevant options), selection supports cherry-pick too, squash, reset (confirmation no, soft, mixed, hard asks "reset hard"), merge. 
+- **Navigation**: arrow keys and vim motions (`h j k l`).
+- **Pagination**: list is paginated to the terminal/viewport height (like `less`).
+- **Search**: `/` starts a fuzzy search.
+- **Enter**: opens a context menu of operations for the selected item.
+- **Confirmations**: destructive operations always ask for confirmation. Dangerous ones require typed confirmation (e.g. type `force` to force-delete, `delete all` for bulk delete).
+- **Select mode**: `Shift+X` enters multi-select for bulk operations.
+- **Colors/markers**: current item (e.g. current branch) is highlighted with a color and a dot marker.
 
-  * graph (alias gr): graphs commits. also -A | --not-all. 
+### Common shortcuts
 
-  * rebase (alias reb): similar as interactive rebase in operations but pretty direct, at the end is submit, that asks confirmation.
+| Key | Action |
+|---|---|
+| `/` | fuzzy search |
+| `Shift+N` | new (create) |
+| `Shift+C` | checkout |
+| `Shift+D` | delete |
+| `Shift+R` | rename |
+| `p` | pull |
+| `Shift+P` | push |
+| `Shift+X` | select mode (bulk operations) |
 
-  * merge (mrg): branches, confirmations shows no, yes, fast forward, etc.; what other options?
+Shortcuts trigger the same confirmations as the menu.
 
-  * status (st): shows reference: @~/src/env/src/common/git/git-st.py. Interactive options: Enter to add command, if on conflicts can continue/abort, what else?
+### Common flags
 
-  * add: Ops: stash, unstash, restore, delete (clean), stash all, unstash all, what else?
+| Flag | Meaning |
+|---|---|
+| `-i`, `--interactive` | interactive mode (default) |
+| `-I`, `--no-interactive` | just print the tabular list |
+| `-S`, `--sort` | sort order |
+| `-F`, `--full` | full view: complete commit message, date, author name |
+| `-s`, `--short` | minimal view (e.g. branch name only) |
 
-Extra to consider TBD
+## Reference implementations
 
-  * remote (rem)
+`~/src/env/src/common/git/` contains earlier Python scripts whose behavior (output format, columns, interactions) can be used as a reference for the equivalent `gint` commands:
 
-  * branch-remotes (brr)
+- `git-br.py` → `branch`
+- `git-lg.py` → `log`
+- `git-lg-br.py` → `graph-branch`
+- `git-st.py` → `status`
+
+## Commands
+
+### `branch` (alias `br`)
+
+Interactive tabular list of branches. Columns: branch name, last commit, last author, relative date.
+
+- **Sort**: last commit, created, author, off.
+- **Filter**: by author; by date (last 1 day, 3 days, 1 week, 1 month, year to date, 1 year); merged / not-merged into the current branch; "gone" (upstream deleted — pairs well with bulk archive/delete).
+- **Search**: fuzzy find with `/`.
+- **Create**: an entry above the list (default focus stays on the first branch) to create a new branch.
+- **Enter menu**: checkout, delete (confirm; force-delete requires typing `force`), pull, push, rename, copy sha (with its own shortcut).
+- **Select mode** (`Shift+X`) bulk operations:
+  - archive: tag as `archive/<branch-name>` and delete the branch
+  - delete: confirm by typing `delete all`
+  - force delete: confirm by typing `force delete`
+- **Merge** (`Shift+M`): merge the selected branch into the current one, reusing the `merge` command's confirmation flow.
+- **Flags**: common flags plus `-b`/`--new` (create branch), `-D`/`--delete`, `-m`/`--rename`.
+- `gint branch <branchname>` (no options): shows an operations menu for that branch, expecting input; supports fuzzy matching (`pull` lowercase vs `Push` uppercase to disambiguate).
+
+### `worktree` (alias `wt`)
+
+Interactive list of worktrees. Columns: path (shortest form: relative, or absolute with `~`), branch, commit, relative date.
+
+- **Operations**: checkout (cd into the directory), fuzzy search, sort, filter, delete, fetch (`f`), pull (`p`), push, rename branch, create worktree (`Shift+N`), prune stale worktrees, lock/unlock, copy path.
+- Same shortcuts and flags as `branch`.
+
+### `graph-branch` (alias `grb`)
+
+Graph view of branches, showing the last commit of each only.
+
+- **Flags**: `-A`/`--not-all` — use the current branch as base instead of all branches (all is the default).
+- Interactions mirror `branch`, adapted to the graph view.
+
+### `log` (alias `lg`)
+
+Interactive commit list. Columns: short sha, message (truncated), relative date, author (first name + last-name initial), branches (local only by default, comma-separated), worktree dir.
+
+- **Operations**: same as `branch`, plus:
+  - **cherry-pick** (`c`): confirmation offers no / yes / no-commit and other relevant options
+  - **squash**
+  - **reset**: confirmation offers no / soft / mixed / hard; hard requires typing `reset hard`
+  - **merge**
+- Select mode supports cherry-pick on multiple commits.
+
+### `graph` (alias `gr`)
+
+Graph view of commits. Same `-A`/`--not-all` flag as `graph-branch`.
+
+### `rebase` (alias `reb`)
+
+Like interactive rebase but more direct: choose operations per commit, then a final **submit** step that asks for confirmation.
+
+- **In-progress detection**: if invoked while a rebase is already in progress, don't start a new one — show the rebase state (branch, onto, current commit, progress e.g. 3/7) and offer: resolve conflicts (if any), continue, skip, edit the current commit, abort (with confirmation).
+- **Conflicts**: when the rebase stops on a conflict, offer inline resolution per conflict: take ours / take theirs / take both / open in `$EDITOR`, then continue; abort and skip are available at any point (abort with confirmation). Always label the two sides with their branch/commit names — during a rebase, git's "ours"/"theirs" are inverted relative to a merge, so raw labels are confusing. Build this as a reusable component: the future `resolve-conflicts` command and the conflict handling in `status` should share it.
+
+### `merge` (alias `mrg`)
+
+Merge branches. Confirmation offers: no / yes (default merge) / fast-forward only (`--ff-only`) / no-ff (force a merge commit) / squash. When a merge is in progress: continue / abort.
+
+### `status` (alias `st`)
+
+Interactive status view. Reference implementation: `git-st.py` (see [Reference implementations](#reference-implementations)).
+
+- **Enter**: toggle stage/unstage for the selected file.
+- **Diff** (`d`): show the diff of the selected file.
+- **Discard**: discard changes to the selected file (typed confirmation).
+- **Stash**: stash the selected file.
+- **Commit** (`c`): open the commit flow (see `commit`); `Shift+A` for amend.
+- During conflicts: continue / abort.
+
+### `add`
+
+Staging operations on the working tree (list of changed files):
+
+- **Operations**: stage, unstage, stage all, unstage all, restore file, clean (delete untracked, with confirmation).
+
+### `stash` (alias `sth`)
+
+Interactive list of stashes. Columns: index, message, branch, relative date.
+
+- **Operations**: apply, pop, drop (confirm), show diff, create stash (`Shift+N`, with message input), clear all (typed confirmation: `clear all`).
+
+### `commit` (alias `cm`)
+
+Commit staged changes: message input, then confirm.
+
+- **Confirmation offers**: no / yes / amend / stage all & commit / commit & push / no-verify (skip hooks) / edit (back to the message input).
+- **Amend** (`Shift+A`): amend the last commit (warn if the commit is already pushed).
+- **No-verify** (`Shift+V`): commit skipping hooks, also available directly as a shortcut.
 
 ## Architecture
 
-stack is: golang, bubble tea library (tui), any extract args, a validation library (vyper on my mind, but you can search and peak a better if any), what other libraries?. Create a makefile, user architecture from /setup-context-architecture
+- **Language**: Go.
+- **TUI**: [Bubble Tea](https://github.com/charmbracelet/bubbletea), plus its companion libraries [Bubbles](https://github.com/charmbracelet/bubbles) (ready-made components: table, list, text input, paginator) and [Lip Gloss](https://github.com/charmbracelet/lipgloss) (styling/colors).
+- **CLI / arg parsing**: [Cobra](https://github.com/spf13/cobra) — commands, subcommands, aliases, and flags. (Viper is Cobra's companion for *config files*; add it only if `gint` grows user configuration.)
+- **Validation**: evaluate [go-playground/validator](https://github.com/go-playground/validator) as the default choice; search for a better fit before committing.
+- **Git access**: shell out to the `git` binary (simplest and always matches user behavior); consider [go-git](https://github.com/go-git/go-git) only where parsing porcelain output gets painful.
+- **Build**: a `Makefile` with at least `build`, `install`, `test`, `lint`, `fmt` targets.
+- **Tests**: standard `go test`, with [teatest](https://github.com/charmbracelet/x/tree/main/exp/teatest) for TUI interaction tests.
+- **Fuzzy matching**: [sahilm/fuzzy](https://github.com/sahilm/fuzzy) — powers `/` search and branch-name disambiguation.
+- **Lint**: `golangci-lint`.
+- **Context docs**: generate the project context architecture with `/setup-context-architecture` (AGENTS.md / CLAUDE.md + `.context/` docs).
+
+## Future (post-v1)
+
+Not part of v1, but keep the design open for them:
+
+- `remote` (alias `rem`): interactive list of remotes. Operations: add, remove, rename, set-url, fetch, prune.
+- `branch-remotes` (alias `brr`): like `branch` but including remote-tracking branches. Operations: checkout (creating a local tracking branch), delete remote branch (typed confirmation), compare ahead/behind.
+
+- `diff` (alias `df`): diff two refs (branches or commits).
+  - `gint diff <ref1> <ref2>` shows the diff directly; `gint diff <ref>` diffs that ref against the working tree; `gint diff` with no args opens an interactive two-step picker (choose the base ref, then the target — branches and commits, fuzzy searchable).
+  - The diff view itself is paginated and searchable like the other views: navigate by file and by hunk, collapse/expand files, `/` to search within the diff.
+  - **Integration with other views**: in `branch`, `log`, `graph`, and `graph-branch`, selecting exactly two items in select mode (`Shift+X`) enables a **diff** operation between them; from a single selected item, a diff-against-current-branch (or against HEAD, in commit views) shortcut. Design select mode in v1 so this operation can plug in later.
+
+- `resolve-conflicts` (alias `rc`): interactive resolution of merge/rebase/cherry-pick conflicts.
+  - Lists conflicted files with their conflict counts; entering a file walks conflict by conflict, showing both sides labeled with their branch/commit.
+  - Per conflict (or whole file): take ours / take theirs / take both / open in `$EDITOR`.
+  - Header shows the operation in progress and overall progress (e.g. "rebasing `feat/x` onto `main`, 2/5 files resolved"); when everything is resolved, offer continue; abort is available at any point (with confirmation).
+  - The conflict handling in `status` (continue/abort) should be designed so it can later hand off to this command.
