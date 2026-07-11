@@ -21,11 +21,13 @@ make install    # install to $GOPATH/bin (version-stamped)
 make build      # build a local ./gint binary
 ```
 
-`make build`/`make install` stamp the version from the current git tag; check it
-with:
+`make build`/`make install` stamp the binary with the semver in [`VERSION`](VERSION)
+plus the exact build commit; check it with:
 
 ```sh
-gint --version
+gint --version   # gint 1.0.0
+gint version     # gint 1.0.0 (commit abc1234) + the binary path — useful for
+                  # telling a stale install on $PATH apart from a fresh build
 ```
 
 ## Command tour

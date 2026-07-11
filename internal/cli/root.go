@@ -9,15 +9,27 @@ import (
 	"git-interact/internal/git"
 )
 
-// version is the build-stamped release string, overridden via -ldflags at
-// build time (see Makefile). Defaults to "dev" for `go run`/plain builds.
-var version = "dev"
+// version is the tracked semver release (from the repo's VERSION file); commit
+// is the git ref that build came from, pinning a build down when two builds
+// share a version. Both are overridden via -ldflags at build time (see
+// Makefile); they default to placeholders for `go run`/plain builds.
+var (
+	version = "0.0.0-dev"
+	commit  = "unknown"
+)
 
 // SetVersion overrides the reported version. main passes the ldflags-stamped
 // value through here so the cli package owns the --version wiring.
 func SetVersion(v string) {
 	if v != "" {
 		version = v
+	}
+}
+
+// SetCommit overrides the reported build commit, same wiring as SetVersion.
+func SetCommit(c string) {
+	if c != "" {
+		commit = c
 	}
 }
 
