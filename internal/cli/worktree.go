@@ -38,7 +38,7 @@ func (i worktreeItem) Current() bool       { return i.isMainWT }
 func worktreeColumns() []tui.Column {
 	return []tui.Column{
 		{Title: "path", MinWidth: 12, Flex: true, Density: tui.DensityShort},
-		{Title: "branch", MinWidth: 10, Density: tui.DensityShort, Color: tui.ColorName},
+		{Title: "branch", MinWidth: 10, Density: tui.DensityShort},
 		{Title: "commit", MinWidth: 7, Density: tui.DensityNormal, Color: tui.ColorSHA},
 		{Title: "date", MinWidth: 10, Density: tui.DensityNormal, Color: tui.ColorDate},
 	}

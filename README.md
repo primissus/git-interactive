@@ -38,6 +38,7 @@ parentheses.
 | Command | Alias | What it does |
 |---|---|---|
 | `gint branch` | `br` | Browse branches (last commit, author, date). Checkout, delete, rename, pull/push, merge, bulk archive/delete. |
+| `gint tags` | `tag` | Browse tags (message, tagger/author, date). Checkout (detached), delete, push, bulk delete. |
 | `gint worktree` | `wt` | Browse worktrees. Checkout (prints the path — see below), create, prune, lock/unlock, delete. |
 | `gint log` | `lg` | Browse commits. Checkout (detached), cherry-pick, squash, reset, merge, copy sha. |
 | `gint graph` | `gr` | Commit graph (git's own layout). `-A` bases it on the current branch instead of all. |
@@ -78,9 +79,9 @@ All interactive views share the same keys:
 | Key | Action |
 |---|---|
 | `↑`/`k`, `↓`/`j` | move cursor (prefix with a count, e.g. `10j`) |
-| `u` / `d` (or `Ctrl+U`/`Ctrl+D`) | half-page up / down |
+| `u` / `d` (or `Ctrl+U`/`Ctrl+D`, `Opt+↑`/`Opt+↓`) | half-page up / down |
 | `←`/`h`, `→`/`l`, `PgUp`/`PgDn` | page |
-| `g` / `G` | jump to top / bottom |
+| `g` / `G` | jump to top / bottom — prefix `g` with a row number (from the gutter) to jump there, e.g. `12g` |
 | `/` | fuzzy search |
 | `Enter` | open the context menu for the current row |
 | `Shift+X` | select mode (`space`/`x` toggle rows, Enter for bulk operations) |

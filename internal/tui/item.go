@@ -23,6 +23,17 @@ type Item interface {
 	Current() bool
 }
 
+// DefaultActioner is an optional Item extension for rows that stand in for one
+// specific action rather than a real record — e.g. the pinned "+ new branch"
+// row. Enter on such a row runs the named Operation directly instead of
+// opening the context menu, since a menu of item operations makes no sense
+// for a placeholder that isn't one.
+type DefaultActioner interface {
+	// DefaultOp names the Operation (by Operation.Name) that Enter should run
+	// for this row.
+	DefaultOp() string
+}
+
 // Column describes one column of a list or tabular view. The same Column set
 // drives both the interactive List and the non-interactive RenderTable output
 // so the two never drift.

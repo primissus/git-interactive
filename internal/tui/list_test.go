@@ -95,6 +95,39 @@ func TestMenuDispatchesOperation(t *testing.T) {
 	finish(t, tm)
 }
 
+// defaultActionItem is a minimal DefaultActioner for TestEnterOnDefaultActionerSkipsMenu.
+type defaultActionItem struct{ op string }
+
+func (defaultActionItem) Columns() []string   { return []string{"+ create"} }
+func (defaultActionItem) FilterValue() string { return "" }
+func (defaultActionItem) Current() bool       { return false }
+func (i defaultActionItem) DefaultOp() string { return i.op }
+
+func TestEnterOnDefaultActionerSkipsMenu(t *testing.T) {
+	l := New(Config{
+		Title:   "test",
+		Columns: []Column{{Title: "col", MinWidth: 4, Flex: true}},
+		Items:   []Item{defaultActionItem{op: "new"}},
+		Operations: []Operation{
+			{
+				Name: "new", Key: "N", Scope: ScopeList,
+				Input: &InputSpec{Prompt: "New name", Placeholder: "name"},
+				Run: func(c OpContext) tea.Cmd {
+					return Status("created " + c.Input)
+				},
+			},
+		},
+	})
+	tm := teatest.NewTestModel(t, l, teatest.WithInitialTermSize(100, 24))
+	// Enter on a DefaultActioner row must jump straight to its named
+	// operation's input prompt, not the (here, single-entry) context menu.
+	sendKeys(tm, keyType(tea.KeyEnter))
+	tm.Type("foo")
+	sendKeys(tm, keyType(tea.KeyEnter))
+	waitForText(t, tm, "created foo")
+	finish(t, tm)
+}
+
 func TestMenuFuzzyMatchesOperation(t *testing.T) {
 	tm := newTestModel(t)
 	// Open the menu and type "pu" to disambiguate to "push", then run it.
@@ -173,6 +206,43 @@ func TestHalfPageJumpClampsToEnd(t *testing.T) {
 	l := finish(t, tm)
 	if l.cursor != len(l.visible)-1 {
 		t.Fatalf("cursor after d (half-page): got %d, want %d", l.cursor, len(l.visible)-1)
+	}
+}
+
+func TestGotoRowJumpsToNumberedRow(t *testing.T) {
+	tm := newTestModel(t)
+	// "3g" jumps to the row numbered 3 in the gutter (1-indexed) — cursor 2.
+	sendKeys(tm, keyRunes('3'), keyRunes('g'))
+	l := finish(t, tm)
+	if l.cursor != 2 {
+		t.Fatalf("cursor after 3g: got %d, want 2", l.cursor)
+	}
+
+	// Bare "g" (no count) still goes to the top row, same as before "Ng" existed.
+	tm = newTestModel(t)
+	sendKeys(tm, keyRunes('G'), keyRunes('g'))
+	l = finish(t, tm)
+	if l.cursor != 0 {
+		t.Fatalf("cursor after G g: got %d, want 0", l.cursor)
+	}
+}
+
+func TestAltArrowsHalfPageJump(t *testing.T) {
+	tm := newTestModel(t)
+	// Alt+Down should jump the same as 'd'/ctrl+d: clamps to the last row on
+	// the short demo list.
+	sendKeys(tm, tea.KeyMsg{Type: tea.KeyDown, Alt: true})
+	l := finish(t, tm)
+	if l.cursor != len(l.visible)-1 {
+		t.Fatalf("cursor after alt+down: got %d, want %d", l.cursor, len(l.visible)-1)
+	}
+
+	// Alt+Up from there should bring it back toward the top.
+	tm = newTestModel(t)
+	sendKeys(tm, tea.KeyMsg{Type: tea.KeyDown, Alt: true}, tea.KeyMsg{Type: tea.KeyUp, Alt: true})
+	l = finish(t, tm)
+	if l.cursor != 0 {
+		t.Fatalf("cursor after alt+down alt+up: got %d, want 0", l.cursor)
 	}
 }
 

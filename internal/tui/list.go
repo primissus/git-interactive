@@ -213,9 +213,9 @@ func (l *List) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 		l.page(-n)
 	case "right", "l", "pgdown":
 		l.page(n)
-	case "ctrl+u":
+	case "ctrl+u", "alt+up":
 		l.moveCursor(-n * l.halfPage())
-	case "ctrl+d":
+	case "ctrl+d", "alt+down":
 		l.moveCursor(n * l.halfPage())
 	case "u", "d":
 		// u/d are half-page jumps unless the current view binds them to an
@@ -229,7 +229,9 @@ func (l *List) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		l.moveCursor(dir * n * l.halfPage())
 	case "g", "home":
-		l.cursor, l.top = 0, 0
+		// Bare "g" goes to row 1 (the top); a count prefix goes to that row
+		// number instead — e.g. "12g" jumps to the row numbered 12 in the gutter.
+		l.gotoRow(n)
 	case "G", "end":
 		l.cursor = max(0, len(l.visible)-1)
 		l.clampScroll()
@@ -311,6 +313,17 @@ func (l *List) page(dir int) {
 	l.clampScroll()
 }
 
+// gotoRow jumps the cursor to the row numbered n (1-indexed, matching the
+// gutter drawn by rowPrefix). n=1 — "g" with no count prefix — lands on the
+// top row, same as before "Ng" existed.
+func (l *List) gotoRow(n int) {
+	if len(l.visible) == 0 {
+		return
+	}
+	l.cursor = clamp(n-1, 0, len(l.visible)-1)
+	l.clampScroll()
+}
+
 // pageRows is how many rows fit in the viewport between the header and footer.
 func (l *List) pageRows() int {
 	// title(1) + header(1) + blank(1) + footer(1) reserved.
@@ -376,7 +389,23 @@ func (l *List) openMenuForContext() tea.Cmd {
 	if len(l.visible) == 0 {
 		return nil
 	}
+	it := l.items[l.visible[l.cursor]]
+	if da, ok := it.(DefaultActioner); ok {
+		if op, ok := l.opByName(da.DefaultOp()); ok {
+			return l.startOp(op)
+		}
+	}
 	return l.openMenuWith(l.itemOps())
+}
+
+// opByName finds a registered operation by Operation.Name.
+func (l *List) opByName(name string) (Operation, bool) {
+	for _, op := range l.ops {
+		if op.Name == name {
+			return op, true
+		}
+	}
+	return Operation{}, false
 }
 
 func (l *List) openItemMenu(filter string) {

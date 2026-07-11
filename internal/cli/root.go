@@ -66,6 +66,7 @@ func newRootCmd() *cobra.Command {
 
 	root.AddCommand(
 		newBranchCmd(),
+		newTagsCmd(),
 		newWorktreeCmd(),
 		newGraphBranchCmd(),
 		newLogCmd(),

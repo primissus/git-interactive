@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -153,7 +154,7 @@ func (l *List) rows(widths []int) string {
 			body += strings.Repeat(" ", pad)
 		}
 
-		line := l.rowPrefix(itemIdx, rowStyle) + rowStyle.Render(body)
+		line := l.rowPrefix(i+1, itemIdx, highlighted, rowStyle) + rowStyle.Render(body)
 		b.WriteString(line)
 		if i < l.top+rows-1 && i < len(l.visible)-1 {
 			b.WriteByte('\n')
@@ -162,50 +163,78 @@ func (l *List) rows(widths []int) string {
 	return b.String()
 }
 
-// prefixWidth is the fixed width of the marker (and select checkbox) gutter.
+// prefixWidth is the fixed width of the row-number, marker, and (in select
+// mode) checkbox gutter.
 func (l *List) prefixWidth() int {
-	w := 2 // "● " current-item marker
+	w := l.numWidth() + 1 // right-aligned row number + trailing space
+	w += 2                // "● " current-item marker
 	if l.selectMode {
 		w += 4 // "[x] " checkbox
 	}
 	return w
 }
 
-// rowPrefix renders the current-item dot marker and, in select mode, the
-// selection checkbox for the given item index. Both glyphs are rendered with
-// rowStyle's own colors as their base (so the gutter's background matches the
-// rest of the row, including on the highlighted/cursor row) with their
-// foreground swapped to a contrasting accent when active — each cell is a
-// self-contained styled segment rather than being nested inside a larger
-// Render call, so an embedded reset can't cut the row's background short.
-func (l *List) rowPrefix(itemIdx int, rowStyle lipgloss.Style) string {
-	dot := "  "
-	if l.items[itemIdx].Current() {
-		dot = "● "
+// numWidth is the digit width needed to print every row's 1-indexed position
+// — the number "Ng" jumps to — so the gutter stays aligned as the row count
+// (or a search filter) changes how many digits the largest number needs.
+func (l *List) numWidth() int {
+	return len(strconv.Itoa(max(len(l.visible), 1)))
+}
+
+// rowPrefix renders the row-number gutter, the current-item dot marker, and,
+// in select mode, the selection checkbox for the given row. pos is the row's
+// 1-indexed position among l.visible — what "Ng" navigates to. Every glyph is
+// rendered with rowStyle's own colors as its base (so the gutter's background
+// matches the rest of the row, including on the highlighted/cursor row) with
+// its foreground swapped to a distinct accent when active — each cell is a
+// self-contained styled segment rather than nested inside a larger Render
+// call, so an embedded reset can't cut the row's background short.
+func (l *List) rowPrefix(pos, itemIdx int, highlighted bool, rowStyle lipgloss.Style) string {
+	var numFg lipgloss.TerminalColor
+	if !highlighted {
+		// Faint on ordinary/current rows so the number reads as a gutter, not
+		// data; on the highlighted row it just inherits rowStyle like the rest
+		// of the line, since a dim foreground would fight the row's own bold
+		// contrast color there.
+		numFg = colorFaint
 	}
-	prefix := styledCell(rowStyle, colorCurrent, l.items[itemIdx].Current(), dot)
+	prefix := styledCell(rowStyle, numFg, false, fmt.Sprintf("%*d ", l.numWidth(), pos))
+
+	current := l.items[itemIdx].Current()
+	dot := "  "
+	var dotFg lipgloss.TerminalColor
+	if current {
+		dot = "● "
+		dotFg = colorCurrent
+	}
+	prefix += styledCell(rowStyle, dotFg, current, dot)
 
 	if !l.selectMode {
 		return prefix
 	}
 
 	box := "[ ] "
+	var boxFg lipgloss.TerminalColor
 	selected := l.selected[itemIdx]
 	if selected {
 		box = "[x] "
+		boxFg = colorAccent
 	}
-	return prefix + styledCell(rowStyle, colorAccent, selected, box)
+	return prefix + styledCell(rowStyle, boxFg, selected, box)
 }
 
 // styledCell renders s using rowStyle's own foreground/background/bold as a
-// base, swapping in accent as the foreground when active is true. Because the
-// whole cell (including rowStyle's background) is re-stated in one Render
-// call, it composes cleanly with adjacent styled segments — no gap in
-// background color even though each call emits its own reset.
-func styledCell(rowStyle lipgloss.Style, accent lipgloss.TerminalColor, active bool, s string) string {
+// base, swapping in fg as the foreground when non-nil and bolding when bold is
+// true. Because the whole cell (including rowStyle's background) is re-stated
+// in one Render call, it composes cleanly with adjacent styled segments — no
+// gap in background color even though each call emits its own reset.
+func styledCell(rowStyle lipgloss.Style, fg lipgloss.TerminalColor, bold bool, s string) string {
 	st := rowStyle
-	if active {
-		st = st.Foreground(accent).Bold(true)
+	if fg != nil {
+		st = st.Foreground(fg)
+	}
+	if bold {
+		st = st.Bold(true)
 	}
 	return st.Render(s)
 }
@@ -242,9 +271,9 @@ func (l *List) footer() string {
 func (l *List) helpView() string {
 	nav := [][2]string{
 		{"j / k", "move down / up"},
-		{"u / d", "half-page down / up"},
+		{"u / d / ⌥↑ / ⌥↓", "half-page down / up"},
 		{"h / l", "page back / forward"},
-		{"g / G", "jump to top / bottom"},
+		{"g / G", "jump to top / bottom (12g → row 12)"},
 		{"10j", "repeat a motion N times"},
 		{"/", "fuzzy search"},
 		{"enter", "open menu"},

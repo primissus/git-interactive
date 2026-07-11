@@ -37,16 +37,19 @@ func (i branchItem) Current() bool       { return i.b.Head }
 // createBranchItem is the pinned "create a branch" row shown above the list;
 // see PROMPT.md branch → "Create: an entry above the list (default focus
 // stays on first branch)". It participates in the same list so the "new"
-// operation is reachable both from Shift+N and by opening its own row menu.
+// operation is reachable both from Shift+N and by pressing enter on its row —
+// DefaultOp skips the regular item-ops menu (which doesn't apply to a
+// placeholder row) and goes straight to the name prompt.
 type createBranchItem struct{}
 
 func (createBranchItem) Columns() []string   { return []string{"+ new branch (Shift+N)", "", "", ""} }
 func (createBranchItem) FilterValue() string { return "" }
 func (createBranchItem) Current() bool       { return false }
+func (createBranchItem) DefaultOp() string   { return "new" }
 
 func branchColumns() []tui.Column {
 	return []tui.Column{
-		{Title: "branch", MinWidth: 12, Flex: true, Density: tui.DensityShort, Color: tui.ColorName},
+		{Title: "branch", MinWidth: 12, Flex: true, Density: tui.DensityShort},
 		{Title: "last commit", MaxWidth: 50, Density: tui.DensityNormal},
 		{Title: "date", MinWidth: 10, Density: tui.DensityNormal, Color: tui.ColorDate},
 		{Title: "author", MinWidth: 10, Density: tui.DensityFull, Color: tui.ColorAuthor},
