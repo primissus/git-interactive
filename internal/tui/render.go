@@ -139,16 +139,21 @@ func (l *List) rows(widths []int) string {
 			}
 			cells[j] = cv
 		}
-		line := l.rowPrefix(itemIdx, highlighted) + strings.Join(cells, colGap)
 
+		rowStyle := l.styles.Row
 		switch {
 		case highlighted:
-			line = l.styles.RowSelected.Render(line)
+			rowStyle = l.styles.RowSelected
 		case current:
-			line = l.styles.RowCurrent.Render(line)
-		default:
-			line = l.styles.Row.Render(line)
+			rowStyle = l.styles.RowCurrent
 		}
+
+		body := strings.Join(cells, colGap)
+		if pad := l.width - l.prefixWidth() - runewidth.StringWidth(body); pad > 0 {
+			body += strings.Repeat(" ", pad)
+		}
+
+		line := l.rowPrefix(itemIdx, rowStyle) + rowStyle.Render(body)
 		b.WriteString(line)
 		if i < l.top+rows-1 && i < len(l.visible)-1 {
 			b.WriteByte('\n')
@@ -167,31 +172,42 @@ func (l *List) prefixWidth() int {
 }
 
 // rowPrefix renders the current-item dot marker and, in select mode, the
-// selection checkbox for the given item index. On the highlighted (cursor) row
-// the glyphs are emitted unstyled so the row's own background spans the whole
-// line — a pre-styled glyph carries an SGR reset that would otherwise cut the
-// highlight short at the marker/checkbox.
-func (l *List) rowPrefix(itemIdx int, highlighted bool) string {
-	marker := "  "
+// selection checkbox for the given item index. Both glyphs are rendered with
+// rowStyle's own colors as their base (so the gutter's background matches the
+// rest of the row, including on the highlighted/cursor row) with their
+// foreground swapped to a contrasting accent when active — each cell is a
+// self-contained styled segment rather than being nested inside a larger
+// Render call, so an embedded reset can't cut the row's background short.
+func (l *List) rowPrefix(itemIdx int, rowStyle lipgloss.Style) string {
+	dot := "  "
 	if l.items[itemIdx].Current() {
-		if highlighted {
-			marker = "● "
-		} else {
-			marker = l.styles.Marker.Render("●") + " "
-		}
+		dot = "● "
 	}
-	if l.selectMode {
-		box := "[ ] "
-		if l.selected[itemIdx] {
-			if highlighted {
-				box = "[x] "
-			} else {
-				box = l.styles.Checkbox.Render("[x]") + " "
-			}
-		}
-		return marker + box
+	prefix := styledCell(rowStyle, colorCurrent, l.items[itemIdx].Current(), dot)
+
+	if !l.selectMode {
+		return prefix
 	}
-	return marker
+
+	box := "[ ] "
+	selected := l.selected[itemIdx]
+	if selected {
+		box = "[x] "
+	}
+	return prefix + styledCell(rowStyle, colorAccent, selected, box)
+}
+
+// styledCell renders s using rowStyle's own foreground/background/bold as a
+// base, swapping in accent as the foreground when active is true. Because the
+// whole cell (including rowStyle's background) is re-stated in one Render
+// call, it composes cleanly with adjacent styled segments — no gap in
+// background color even though each call emits its own reset.
+func styledCell(rowStyle lipgloss.Style, accent lipgloss.TerminalColor, active bool, s string) string {
+	st := rowStyle
+	if active {
+		st = st.Foreground(accent).Bold(true)
+	}
+	return st.Render(s)
 }
 
 func (l *List) footer() string {
