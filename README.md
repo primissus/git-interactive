@@ -1,6 +1,7 @@
-# git-interact (`gint`)
+# gint
 
-`gint` wraps common git operations in interactive, navigable terminal UIs. Every
+**gint** — from **g**it-**int**eractive — wraps common git operations in
+interactive, navigable terminal UIs. Every
 view is a paginated, fuzzy-searchable list with a consistent context menu,
 confirmation flows, and multi-select — so `branch`, `log`, `status`, `rebase`
 and the rest all feel the same.
@@ -11,24 +12,60 @@ behavior always matches what git itself would do.
 
 ## Install
 
-Requires **Go 1.26+** and a `git` binary on your `PATH`.
+`gint` shells out to `git`, so a **`git` binary on your `PATH`** is the only
+runtime requirement. No Go toolchain is needed to run a prebuilt binary.
+
+### Download a prebuilt binary (recommended)
+
+Grab the zip for your platform from the
+[latest release](https://github.com/primissus/git-interactive/releases/latest):
+
+| Platform | Asset |
+| --- | --- |
+| macOS (Apple Silicon) | `gint_<version>_darwin_arm64.zip` |
+| macOS (Intel) | `gint_<version>_darwin_amd64.zip` |
+| Linux (x86-64) | `gint_<version>_linux_amd64.zip` |
+| Linux (ARM64) | `gint_<version>_linux_arm64.zip` |
+| Windows (x86-64) | `gint_<version>_windows_amd64.zip` |
+
+Unzip it, then put the `gint` binary somewhere on your `PATH` (e.g.
+`/usr/local/bin`). Each zip also bundles the `LICENSE` and this `README`.
+Verify the download against `checksums.txt` from the release:
 
 ```sh
-git clone <repo-url> git-interact && cd git-interact
+shasum -a 256 -c checksums.txt   # run in the folder holding the downloaded zips
+```
+
+**macOS:** binaries are unsigned, so Gatekeeper quarantines them on first run
+("cannot be opened because the developer cannot be verified"). Clear it once:
+
+```sh
+xattr -d com.apple.quarantine gint
+```
+
+### Build from source
+
+Requires **Go 1.26+**.
+
+```sh
+git clone https://github.com/primissus/git-interactive.git gint && cd gint
 
 make install    # install to $GOPATH/bin (version-stamped)
 # or
 make build      # build a local ./gint binary
 ```
 
-`make build`/`make install` stamp the binary with the semver in [`VERSION`](VERSION)
-plus the exact build commit; check it with:
+Either way the binary is stamped with the semver in [`VERSION`](VERSION) plus the
+exact build commit; check it with:
 
 ```sh
 gint --version   # gint 1.0.0
 gint version     # gint 1.0.0 (commit abc1234) + the binary path — useful for
-                  # telling a stale install on $PATH apart from a fresh build
+                 # telling a stale install on $PATH apart from a fresh build
 ```
+
+Maintainers: `make release` cross-compiles every platform above into `dist/` as
+zips plus a `checksums.txt`, ready to attach to a GitHub release.
 
 ## Command tour
 
