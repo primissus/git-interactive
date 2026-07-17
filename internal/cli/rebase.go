@@ -188,5 +188,5 @@ func buildRebasePlanOps(ctx context.Context, r *git.Runner, plan git.RebasePlan,
 			},
 		},
 	}
-	return ops
+	return tui.ApplyKeymap("rebase", ops)
 }

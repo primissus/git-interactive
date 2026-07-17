@@ -36,8 +36,8 @@ type menuModel struct {
 // `gint branch <name>` disambiguation); pass "" for an empty filter.
 func newMenu(ops []Operation, initial string, st *Styles) menuModel {
 	ti := textinput.New()
-	ti.Prompt = "/ "
-	ti.Placeholder = "filter operations"
+	ti.Prompt = chrome().MenuPrompt
+	ti.Placeholder = chrome().MenuPlaceholder
 	ti.SetValue(initial)
 	ti.CursorEnd()
 	ti.Focus()
@@ -135,6 +135,6 @@ func (m menuModel) View() string {
 		b.WriteString("\n")
 	}
 	b.WriteString("\n")
-	b.WriteString(m.styles.Help.Render("type to filter · ↑/↓ move · enter run · esc cancel"))
+	b.WriteString(m.styles.Help.Render(chrome().MenuFooter))
 	return m.styles.Overlay.Render(b.String())
 }

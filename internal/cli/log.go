@@ -184,7 +184,7 @@ func buildLogOperations(ctx context.Context, r *git.Runner, full bool) []tui.Ope
 		return tea.Batch(tui.Status(status), refresh())
 	}
 
-	return []tui.Operation{
+	return tui.ApplyKeymap("log", []tui.Operation{
 		{
 			Name: "checkout", Key: "C", Scope: tui.ScopeItem,
 			Confirm: &tui.Confirm{Kind: tui.ConfirmYesNo, Prompt: "Checkout this commit? (detaches HEAD)"},
@@ -299,7 +299,7 @@ func buildLogOperations(ctx context.Context, r *git.Runner, full bool) []tui.Ope
 				return refreshWith("merged " + branch)
 			},
 		},
-	}
+	})
 }
 
 // firstRef returns a commit's first local branch ref, if any.

@@ -3,10 +3,12 @@ package cli
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/spf13/cobra"
 
 	"git-interact/internal/git"
+	"git-interact/internal/tui"
 )
 
 // version is the tracked semver release (from the repo's VERSION file); commit
@@ -35,6 +37,11 @@ func SetCommit(c string) {
 
 // Execute builds the command tree and runs it against os.Args.
 func Execute() error {
+	// A malformed ~/.config/gint/keymap.json should never take down the tool
+	// — warn and fall back to the built-in defaults.
+	if err := tui.LoadKeymap(); err != nil {
+		fmt.Fprintln(os.Stderr, "gint: "+err.Error())
+	}
 	root := newRootCmd()
 	return root.Execute()
 }

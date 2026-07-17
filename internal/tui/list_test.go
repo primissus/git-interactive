@@ -246,6 +246,67 @@ func TestAltArrowsHalfPageJump(t *testing.T) {
 	}
 }
 
+// headerDemoRow is a minimal selectable Item for the header-skipping test.
+type headerDemoRow struct{ name string }
+
+func (r headerDemoRow) Columns() []string   { return []string{r.name} }
+func (r headerDemoRow) FilterValue() string { return r.name }
+func (r headerDemoRow) Current() bool       { return false }
+
+// newHeaderTestModel builds a list with a leading header and a header mid-list:
+// Header("A"), row0, row1, Header("B"), row2.
+func newHeaderTestModel(t *testing.T) *teatest.TestModel {
+	t.Helper()
+	l := New(Config{
+		Title:   "headers",
+		Columns: []Column{{Title: "name", MinWidth: 8}},
+		Items: []Item{
+			HeaderItem{Label: "A"},
+			headerDemoRow{"row0"},
+			headerDemoRow{"row1"},
+			HeaderItem{Label: "B"},
+			headerDemoRow{"row2"},
+		},
+	})
+	return teatest.NewTestModel(t, l, teatest.WithInitialTermSize(100, 24))
+}
+
+func TestHeaderRowsSkippedByNavigation(t *testing.T) {
+	// A list opening with a leading header lands the cursor on the first real
+	// row, not the header.
+	tm := newHeaderTestModel(t)
+	l := finish(t, tm)
+	if got := l.items[l.visible[l.cursor]]; got != (headerDemoRow{"row0"}) {
+		t.Fatalf("initial cursor item = %v, want row0", got)
+	}
+
+	// j/k never rest on the "B" header between row1 and row2.
+	tm = newHeaderTestModel(t)
+	sendKeys(tm, keyRunes('j'), keyRunes('j'))
+	l = finish(t, tm)
+	if got := l.items[l.visible[l.cursor]]; got != (headerDemoRow{"row2"}) {
+		t.Fatalf("cursor after jj = %v, want row2 (should skip the B header)", got)
+	}
+
+	// G lands on the last real row, not a trailing header (none here, but
+	// exercises the skip-backward path).
+	tm = newHeaderTestModel(t)
+	sendKeys(tm, keyRunes('G'))
+	l = finish(t, tm)
+	if got := l.items[l.visible[l.cursor]]; got != (headerDemoRow{"row2"}) {
+		t.Fatalf("cursor after G = %v, want row2", got)
+	}
+
+	// Ng addresses data rows only: row numbers 1,2,3 map to row0,row1,row2 —
+	// headers consume no number.
+	tm = newHeaderTestModel(t)
+	sendKeys(tm, keyRunes('3'), keyRunes('g'))
+	l = finish(t, tm)
+	if got := l.items[l.visible[l.cursor]]; got != (headerDemoRow{"row2"}) {
+		t.Fatalf("cursor after 3g = %v, want row2", got)
+	}
+}
+
 func TestHelpOverlayOpensAndCloses(t *testing.T) {
 	tm := newTestModel(t)
 	sendKeys(tm, keyRunes('?'))

@@ -29,7 +29,7 @@ type inputModel struct {
 func newInput(spec InputSpec, st *Styles) inputModel {
 	ti := textinput.New()
 	ti.Placeholder = spec.Placeholder
-	ti.Prompt = "› "
+	ti.Prompt = chrome().InputPrompt
 	ti.SetValue(spec.Initial)
 	ti.CursorEnd()
 	ti.Focus()
@@ -80,6 +80,6 @@ func (m inputModel) View() string {
 		b.WriteString(m.styles.Status.Render(m.errMsg))
 		b.WriteString("\n\n")
 	}
-	b.WriteString(m.styles.Help.Render("enter submit · esc cancel"))
+	b.WriteString(m.styles.Help.Render(chrome().InputFooter))
 	return m.styles.Overlay.Render(b.String())
 }

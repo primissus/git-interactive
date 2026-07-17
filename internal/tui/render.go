@@ -35,7 +35,7 @@ func (l *List) View() string {
 // titleLine is the title plus a row count and any active sort/filter context.
 func (l *List) titleLine() string {
 	parts := []string{l.title}
-	parts = append(parts, fmt.Sprintf("(%d)", len(l.visible)))
+	parts = append(parts, fmt.Sprintf("(%d)", l.dataRowCount()))
 	if l.sort != "" {
 		parts = append(parts, "sort:"+l.sort)
 	}
@@ -54,6 +54,9 @@ func (l *List) layout() []int {
 		w := max(runewidth.StringWidth(c.Title), c.MinWidth)
 		ci := l.columnIndex(c)
 		for _, idx := range l.visible {
+			if isHeader(l.items[idx]) {
+				continue
+			}
 			if cw := runewidth.StringWidth(cell(l.items[idx], ci)); cw > w {
 				w = cw
 			}
@@ -117,10 +120,18 @@ func (l *List) rows(widths []int) string {
 		}
 	}
 
+	nums := l.dataRowNumbers()
 	var b strings.Builder
 	for i := l.top; i < l.top+rows && i < len(l.visible); i++ {
 		itemIdx := l.visible[i]
 		it := l.items[itemIdx]
+		if isHeader(it) {
+			b.WriteString(l.sectionHeaderLine(it))
+			if i < l.top+rows-1 && i < len(l.visible)-1 {
+				b.WriteByte('\n')
+			}
+			continue
+		}
 		highlighted := i == l.cursor
 		current := it.Current()
 		// A cursor or current row wears one whole-row style, so per-column tints
@@ -154,13 +165,19 @@ func (l *List) rows(widths []int) string {
 			body += strings.Repeat(" ", pad)
 		}
 
-		line := l.rowPrefix(i+1, itemIdx, highlighted, rowStyle) + rowStyle.Render(body)
+		line := l.rowPrefix(nums[i], itemIdx, highlighted, rowStyle) + rowStyle.Render(body)
 		b.WriteString(line)
 		if i < l.top+rows-1 && i < len(l.visible)-1 {
 			b.WriteByte('\n')
 		}
 	}
 	return b.String()
+}
+
+// sectionHeaderLine renders a Header row: its label, indented past the
+// row-number/marker gutter, with no cell layout or row number.
+func (l *List) sectionHeaderLine(it Item) string {
+	return strings.Repeat(" ", l.prefixWidth()) + l.styles.SectionHeader.Render(cell(it, 0))
 }
 
 // prefixWidth is the fixed width of the row-number, marker, and (in select
@@ -178,7 +195,7 @@ func (l *List) prefixWidth() int {
 // — the number "Ng" jumps to — so the gutter stays aligned as the row count
 // (or a search filter) changes how many digits the largest number needs.
 func (l *List) numWidth() int {
-	return len(strconv.Itoa(max(len(l.visible), 1)))
+	return len(strconv.Itoa(max(l.dataRowCount(), 1)))
 }
 
 // rowPrefix renders the row-number gutter, the current-item dot marker, and,
@@ -255,9 +272,9 @@ func (l *List) footer() string {
 		return l.helpView()
 	}
 
-	help := "j/k move · u/d ½page · / search · enter menu · X select · ? help · q quit"
+	help := chrome().Footer
 	if l.selectMode {
-		help = fmt.Sprintf("space/x toggle · enter bulk ops · esc exit · %d selected", len(l.selected))
+		help = fmt.Sprintf(chrome().SelectFooter, len(l.selected))
 	}
 	footer := l.styles.Help.Render(help)
 	if l.status != "" {
@@ -269,19 +286,7 @@ func (l *List) footer() string {
 // helpView renders the "?" overlay: the built-in navigation keys plus this
 // view's own operation shortcuts, read live from its registry.
 func (l *List) helpView() string {
-	nav := [][2]string{
-		{"j / k", "move down / up"},
-		{"u / d / ⌥↑ / ⌥↓", "half-page down / up"},
-		{"h / l", "page back / forward"},
-		{"g / G", "jump to top / bottom (12g → row 12)"},
-		{"10j", "repeat a motion N times"},
-		{"/", "fuzzy search"},
-		{"enter", "open menu"},
-		{"X", "select mode"},
-		{"space / x", "toggle selection"},
-		{"?", "this help"},
-		{"q", "quit"},
-	}
+	nav := chrome().Nav
 
 	keyW := 0
 	for _, r := range nav {

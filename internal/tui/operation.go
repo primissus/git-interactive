@@ -23,6 +23,11 @@ type Operation struct {
 	// Name is the label shown in the context menu and matched by menu fuzzy
 	// search, e.g. "checkout", "force delete".
 	Name string
+	// ID is a stable identifier for keymap.json override lookups, used
+	// instead of Name when Name is built dynamically per-instance (e.g. "take
+	// ours (main)"). Falls back to Name when unset — most operations never
+	// need to set this.
+	ID string
 	// Key is an optional shortcut. It is matched against a key event's string
 	// form (bubbletea's KeyMsg.String()), e.g. "C" for Shift+C, "p" for pull,
 	// "shift+x". Empty means menu-only.

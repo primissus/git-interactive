@@ -104,7 +104,7 @@ func buildStashOperations(ctx context.Context, r *git.Runner) []tui.Operation {
 		return tea.Batch(tui.Status(status), refresh())
 	}
 
-	return []tui.Operation{
+	return tui.ApplyKeymap("stash", []tui.Operation{
 		{
 			Name: "apply", Key: "a", Scope: tui.ScopeItem,
 			Run: func(c tui.OpContext) tea.Cmd {
@@ -179,5 +179,5 @@ func buildStashOperations(ctx context.Context, r *git.Runner) []tui.Operation {
 				return refreshWith("cleared all stashes")
 			},
 		},
-	}
+	})
 }

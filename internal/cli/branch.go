@@ -382,7 +382,7 @@ func buildBranchOperations(ctx context.Context, r *git.Runner, f branchFilters, 
 		return out
 	}
 
-	return []tui.Operation{
+	return tui.ApplyKeymap("branch", []tui.Operation{
 		{
 			Name: "checkout", Key: "C", Scope: tui.ScopeItem,
 			Run: func(c tui.OpContext) tea.Cmd {
@@ -555,5 +555,5 @@ func buildBranchOperations(ctx context.Context, r *git.Runner, f branchFilters, 
 				Refresh: refresh,
 			},
 		},
-	}
+	})
 }

@@ -163,7 +163,7 @@ func buildGraphOperations(ctx context.Context, r *git.Runner, notAll, simplify, 
 		return tea.Batch(tui.Status(status), refresh())
 	}
 
-	return []tui.Operation{
+	return tui.ApplyKeymap("graph", []tui.Operation{
 		{
 			Name: "checkout", Key: "C", Scope: tui.ScopeItem,
 			Confirm: &tui.Confirm{Kind: tui.ConfirmYesNo, Prompt: "Checkout this commit? (detaches HEAD)"},
@@ -209,5 +209,5 @@ func buildGraphOperations(ctx context.Context, r *git.Runner, notAll, simplify, 
 				return refreshWith("merged " + branch)
 			},
 		},
-	}
+	})
 }

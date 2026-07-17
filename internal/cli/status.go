@@ -11,15 +11,45 @@ import (
 	"git-interact/internal/tui"
 )
 
-// statusItem adapts a git.StatusEntry to tui.Item. Columns: status code
-// (XY, e.g. "M.", ".M", "??", "UU"), path.
+// statusItem adapts a git.StatusEntry to tui.Item.
+//
+// grouped marks a row built by loadGroupedStatusItems (the interactive,
+// sectioned view) as opposed to loadStatusItems (the flat, script-friendly
+// non-interactive view) — it gates whether Columns shows a section-scoped
+// single status letter or git's raw two-character XY code.
+//
+// staged marks a row's membership in the Staged bucket (as opposed to
+// Unstaged) — a file with both staged and further unstaged changes ("MM")
+// gets one row in each bucket, and staged distinguishes which side a given
+// row represents. Only meaningful when grouped is true.
 type statusItem struct {
 	e         git.StatusEntry
 	conflict  bool
+	grouped   bool
+	staged    bool
 	untracked bool
 }
 
-func (i statusItem) Columns() []string   { return []string{i.e.Code, i.e.Path} }
+// Columns returns git's raw two-character XY code for flat (non-interactive)
+// rows, unchanged from before grouping existed. For grouped (interactive)
+// rows it instead returns a single status letter scoped to the row's section
+// (the index/staged letter under Staged, the worktree/unstaged letter under
+// Unstaged), so no "no change on this side" placeholder "." ever needs to be
+// displayed. Conflict ("UU") and untracked ("??") rows always show their code
+// as-is in both modes.
+func (i statusItem) Columns() []string { return []string{i.displayCode(), i.e.Path} }
+
+func (i statusItem) displayCode() string {
+	switch {
+	case !i.grouped, i.conflict, i.untracked, len(i.e.Code) != 2:
+		return i.e.Code
+	case i.staged:
+		return string(i.e.Code[0])
+	default:
+		return string(i.e.Code[1])
+	}
+}
+
 func (i statusItem) FilterValue() string { return i.e.Path }
 func (i statusItem) Current() bool       { return false }
 
@@ -30,10 +60,12 @@ func statusColumns() []tui.Column {
 	}
 }
 
-// loadStatusItems fetches working-tree status and adapts it to tui.Items:
-// conflicts first, then staged/unstaged paths (deduped — StageFile parses
-// git's combined XY code, so a path with both staged and unstaged changes
-// appears once), then untracked paths.
+// loadStatusItems fetches working-tree status and adapts it to tui.Items for
+// the non-interactive/plain output path: conflicts first, then staged/
+// unstaged paths (deduped — a path with both staged and unstaged changes
+// appears once), then untracked paths. This flat, script-friendly shape (and
+// the raw XY status code) is unchanged from before grouping was added to the
+// interactive view.
 func loadStatusItems(ctx context.Context, r *git.Runner) ([]tui.Item, error) {
 	st, err := git.GetStatus(ctx, r)
 	if err != nil {
@@ -54,6 +86,46 @@ func loadStatusItems(ctx context.Context, r *git.Runner) ([]tui.Item, error) {
 	}
 	for _, e := range st.Untracked {
 		items = append(items, statusItem{e: e, untracked: true})
+	}
+	return items, nil
+}
+
+// loadGroupedStatusItems fetches working-tree status and adapts it to
+// tui.Items for the interactive view: rows grouped under section headers
+// ("Conflicts"/"Staged"/"Unstaged"/"Untracked", each shown only when
+// non-empty), matching plain `git status`. Staged and Unstaged are
+// independent buckets from git.Status, so a path with both staged and further
+// unstaged changes ("MM") appears once in each section, not deduped.
+func loadGroupedStatusItems(ctx context.Context, r *git.Runner) ([]tui.Item, error) {
+	st, err := git.GetStatus(ctx, r)
+	if err != nil {
+		return nil, err
+	}
+
+	var items []tui.Item
+	if len(st.Conflicts) > 0 {
+		items = append(items, tui.HeaderItem{Label: "Conflicts"})
+		for _, e := range st.Conflicts {
+			items = append(items, statusItem{e: e, grouped: true, conflict: true})
+		}
+	}
+	if len(st.Staged) > 0 {
+		items = append(items, tui.HeaderItem{Label: "Staged"})
+		for _, e := range st.Staged {
+			items = append(items, statusItem{e: e, grouped: true, staged: true})
+		}
+	}
+	if len(st.Unstaged) > 0 {
+		items = append(items, tui.HeaderItem{Label: "Unstaged"})
+		for _, e := range st.Unstaged {
+			items = append(items, statusItem{e: e, grouped: true})
+		}
+	}
+	if len(st.Untracked) > 0 {
+		items = append(items, tui.HeaderItem{Label: "Untracked"})
+		for _, e := range st.Untracked {
+			items = append(items, statusItem{e: e, grouped: true, untracked: true})
+		}
 	}
 	return items, nil
 }
@@ -82,16 +154,20 @@ func runStatus(cmd *cobra.Command, _ []string) error {
 	runner := git.NewRunner("")
 	flags := registeredFlags[cmd]
 
-	items, err := loadStatusItems(ctx, runner)
-	if err != nil {
-		return err
-	}
-
 	if !flags.resolveInteractive() {
+		items, err := loadStatusItems(ctx, runner)
+		if err != nil {
+			return err
+		}
 		return tui.RenderTable(cmd.OutOrStdout(), statusColumns(), items, tui.TableOptions{
 			Density: densityFromFlags(flags),
 			Header:  true,
 		})
+	}
+
+	items, err := loadGroupedStatusItems(ctx, runner)
+	if err != nil {
+		return err
 	}
 
 	list := tui.New(tui.Config{
@@ -114,7 +190,7 @@ func runStatus(cmd *cobra.Command, _ []string) error {
 // resolve-conflicts command will share.
 func buildStatusOperations(ctx context.Context, r *git.Runner) []tui.Operation {
 	refresh := func() tea.Cmd {
-		items, err := loadStatusItems(ctx, r)
+		items, err := loadGroupedStatusItems(ctx, r)
 		if err != nil {
 			return tui.Status(err.Error())
 		}
@@ -131,7 +207,7 @@ func buildStatusOperations(ctx context.Context, r *git.Runner) []tui.Operation {
 			// view relies on that). "toggle stage" is listed first in the
 			// menu (reachable via Enter → Enter) and also bound to a direct
 			// shortcut key; see .context/decisions.md.
-			Name: "toggle stage", Key: "t", Scope: tui.ScopeItem,
+			Name: "toggle stage", Key: "a", Scope: tui.ScopeItem,
 			Run: func(c tui.OpContext) tea.Cmd {
 				s, ok := targetStatusEntry(c.Items)
 				if !ok {
@@ -141,7 +217,7 @@ func buildStatusOperations(ctx context.Context, r *git.Runner) []tui.Operation {
 					return tui.Status("resolve the conflict before staging")
 				}
 				var err error
-				if fullyStaged(s.e.Code) {
+				if s.staged {
 					err = git.UnstageFile(ctx, r, s.e.Path)
 				} else {
 					err = git.StageFile(ctx, r, s.e.Path)
@@ -159,7 +235,7 @@ func buildStatusOperations(ctx context.Context, r *git.Runner) []tui.Operation {
 				if !ok {
 					return tui.Status("select a file first")
 				}
-				diff, err := git.DiffFile(ctx, r, s.e.Path, fullyStaged(s.e.Code))
+				diff, err := git.DiffFile(ctx, r, s.e.Path, s.staged)
 				if err != nil {
 					return tui.Status(err.Error())
 				}
@@ -236,7 +312,7 @@ func buildStatusOperations(ctx context.Context, r *git.Runner) []tui.Operation {
 		ops = append(ops, fileResolutionOps(ctx, r, sides, statusConflictPath, refresh)...)
 		ops = append(ops,
 			tui.Operation{
-				Name: "continue " + string(state.Op), Scope: tui.ScopeList,
+				Name: "continue " + string(state.Op), ID: "continue", Scope: tui.ScopeList,
 				Run: func(c tui.OpContext) tea.Cmd {
 					if err := state.Continue(ctx, r); err != nil {
 						return tui.Status(err.Error())
@@ -245,7 +321,7 @@ func buildStatusOperations(ctx context.Context, r *git.Runner) []tui.Operation {
 				},
 			},
 			tui.Operation{
-				Name: "abort " + string(state.Op), Scope: tui.ScopeList,
+				Name: "abort " + string(state.Op), ID: "abort", Scope: tui.ScopeList,
 				Confirm: &tui.Confirm{Kind: tui.ConfirmYesNo, Prompt: "Abort the in-progress " + string(state.Op) + "?"},
 				Run: func(c tui.OpContext) tea.Cmd {
 					if err := state.Abort(ctx, r); err != nil {
@@ -257,7 +333,7 @@ func buildStatusOperations(ctx context.Context, r *git.Runner) []tui.Operation {
 		)
 	}
 
-	return ops
+	return tui.ApplyKeymap("status", ops)
 }
 
 // statusConflictPath resolves a status row to a conflicted file path for the
@@ -268,11 +344,4 @@ func statusConflictPath(items []tui.Item) (string, bool) {
 		return "", false
 	}
 	return s.e.Path, true
-}
-
-// fullyStaged reports whether a status XY code has no remaining unstaged
-// component, e.g. "M." (staged, clean working tree) vs "MM" (staged AND
-// further modified).
-func fullyStaged(code string) bool {
-	return len(code) == 2 && code[0] != '.' && code[1] == '.'
 }

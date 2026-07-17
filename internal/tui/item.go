@@ -34,6 +34,28 @@ type DefaultActioner interface {
 	DefaultOp() string
 }
 
+// Header is an optional Item extension for non-actionable section-divider
+// rows (e.g. "Staged" in `gint status`). Skipped by cursor motions,
+// selection, and operation dispatch; rendered without a row number or
+// current-item marker.
+type Header interface {
+	IsHeader() bool
+}
+
+// HeaderItem is a ready-made Header row any command view can use.
+type HeaderItem struct{ Label string }
+
+func (h HeaderItem) Columns() []string   { return []string{h.Label} }
+func (h HeaderItem) FilterValue() string { return "" }
+func (h HeaderItem) Current() bool       { return false }
+func (h HeaderItem) IsHeader() bool      { return true }
+
+// isHeader reports whether it is a non-actionable Header row.
+func isHeader(it Item) bool {
+	h, ok := it.(Header)
+	return ok && h.IsHeader()
+}
+
 // Column describes one column of a list or tabular view. The same Column set
 // drives both the interactive List and the non-interactive RenderTable output
 // so the two never drift.

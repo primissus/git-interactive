@@ -1,7 +1,7 @@
 # Workflow
 
 ## Before touching anything
-1. Read the current phase's `phases/pN/PLAN.md` and `PROGRESS.md`; work phase by phase (p1 → p8).
+1. Read the current phase's `phases/pN/PLAN.md` and `PROGRESS.md`; work phase by phase (p1 → p9).
 2. Check PROMPT.md for the exact behavior spec of the command you're touching.
 3. Check `.context/decisions.md` before re-deciding stack or design questions.
 

@@ -97,7 +97,7 @@ func newConfirm(spec Confirm, st *Styles) confirmModel {
 func (m *confirmModel) beginTyping(phrase, value string) {
 	ti := textinput.New()
 	ti.Placeholder = phrase
-	ti.Prompt = "› "
+	ti.Prompt = chrome().ConfirmPrompt
 	ti.Focus()
 	m.typing = true
 	m.phrase = phrase
@@ -198,7 +198,7 @@ func (m confirmModel) View() string {
 		b.WriteString(" to confirm:\n")
 		b.WriteString(m.input.View())
 		b.WriteString("\n\n")
-		b.WriteString(m.styles.Help.Render("enter confirm · esc cancel"))
+		b.WriteString(m.styles.Help.Render(chrome().ConfirmYesNoFooter))
 		return m.styles.Overlay.Render(b.String())
 	}
 
@@ -219,6 +219,6 @@ func (m confirmModel) View() string {
 	}
 	b.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, opts...))
 	b.WriteString("\n\n")
-	b.WriteString(m.styles.Help.Render("←/→ move · enter select · esc cancel"))
+	b.WriteString(m.styles.Help.Render(chrome().ConfirmChoiceFooter))
 	return m.styles.Overlay.Render(b.String())
 }

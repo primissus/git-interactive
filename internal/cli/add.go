@@ -67,7 +67,7 @@ func buildAddOperations(ctx context.Context, r *git.Runner) []tui.Operation {
 		return tea.Batch(tui.Status(status), refresh())
 	}
 
-	return []tui.Operation{
+	return tui.ApplyKeymap("add", []tui.Operation{
 		{
 			Name: "stage", Key: "s", Scope: tui.ScopeItem, Bulk: true,
 			Run: func(c tui.OpContext) tea.Cmd {
@@ -148,7 +148,7 @@ func buildAddOperations(ctx context.Context, r *git.Runner) []tui.Operation {
 				return refreshWith("cleaned untracked files")
 			},
 		},
-	}
+	})
 }
 
 func targetAddItems(items []tui.Item) []statusItem {

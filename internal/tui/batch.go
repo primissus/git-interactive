@@ -85,13 +85,13 @@ func (l *List) finishBatch() tea.Cmd {
 	l.batch = nil
 	l.mode = modeList
 
-	summary := fmt.Sprintf("%s %d", br.spec.Verb, br.okCount)
+	summary := fmt.Sprintf(chrome().BatchSummary, br.spec.Verb, br.okCount)
 	if len(br.fails) > 0 {
 		reasons := make([]string, len(br.fails))
 		for i, f := range br.fails {
 			reasons[i] = f.label + ": " + f.err
 		}
-		summary += fmt.Sprintf(" · failed %d (%s)", len(br.fails), strings.Join(reasons, "; "))
+		summary += fmt.Sprintf(chrome().BatchFailSuffix, len(br.fails), strings.Join(reasons, "; "))
 	}
 
 	cmds := []tea.Cmd{Status(summary)}
@@ -133,7 +133,7 @@ func (l *List) batchPromptView() string {
 	b.WriteByte('\n')
 	b.WriteString(l.styles.ConfirmPhrase.Render(last.err))
 	b.WriteString("\n\n")
-	fmt.Fprintf(&b, "continue? %d left  ", remaining)
-	b.WriteString(l.styles.Help.Render("[y] yes · [a] all · [n] stop"))
+	fmt.Fprintf(&b, chrome().BatchContinuePrompt, remaining)
+	b.WriteString(l.styles.Help.Render(chrome().BatchFooter))
 	return l.styles.Overlay.Render(b.String())
 }

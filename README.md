@@ -110,6 +110,36 @@ phrase — e.g. `force` to force-delete a branch, `delete all` for a bulk delete
 `reset hard` for a hard reset. A shortcut runs the exact same confirmation as
 its menu entry.
 
+## Configuration
+
+Every displayed hint — an operation's shortcut key and label, and the generic
+footer/prompt/help text — has a built-in default and can be overridden without
+rebuilding, via `~/.config/gint/keymap.json` (or `$XDG_CONFIG_HOME/gint/keymap.json`
+if set). The file is entirely optional and only needs to list what you want to
+change; everything else keeps its default. A missing or malformed file is not
+fatal — a parse error is printed as a warning and gint falls back to defaults.
+
+```json
+{
+  "operations": {
+    "status.toggle stage": { "key": "a" },
+    "branch.checkout": { "key": "o", "label": "check out" }
+  },
+  "chrome": {
+    "footer": "j/k move · / search · enter menu · q quit"
+  }
+}
+```
+
+`operations` keys are `"<command>.<operation>"` — the command is the name
+shown in the [command tour](#command-tour) table (`status`, `branch`, `log`,
+`tags`, `rebase`, `stash`, `worktree`, `graph`, `add`, or `conflict` for the
+shared take-ours/take-theirs/take-both/edit/continue/skip/abort conflict-
+resolution keys used by both `status` and `rebase`); the operation is its name
+as shown in that view's `?` help overlay. `chrome` fields cover the generic
+list/menu/confirm/input/batch chrome; see `internal/tui/keymap.go`'s `Chrome`
+struct for the full field list.
+
 ## Common flags
 
 | Flag | Meaning |

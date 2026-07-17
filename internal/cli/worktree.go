@@ -261,7 +261,7 @@ func buildWorktreeOperations(ctx context.Context, r *git.Runner, checkoutPath *s
 		return tea.Batch(tui.Status(status), refresh())
 	}
 
-	return []tui.Operation{
+	return tui.ApplyKeymap("worktree", []tui.Operation{
 		{
 			Name: "checkout", Key: "C", Scope: tui.ScopeItem,
 			Run: func(c tui.OpContext) tea.Cmd {
@@ -435,5 +435,5 @@ func buildWorktreeOperations(ctx context.Context, r *git.Runner, checkoutPath *s
 				return refreshWith("pruned stale worktrees")
 			},
 		},
-	}
+	})
 }

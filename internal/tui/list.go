@@ -100,8 +100,8 @@ func New(cfg Config) *List {
 	}
 
 	si := textinput.New()
-	si.Prompt = "/ "
-	si.Placeholder = "fuzzy search"
+	si.Prompt = chrome().SearchPrompt
+	si.Placeholder = chrome().SearchPlaceholder
 
 	l := &List{
 		title:         cfg.Title,
@@ -233,7 +233,7 @@ func (l *List) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// number instead — e.g. "12g" jumps to the row numbered 12 in the gutter.
 		l.gotoRow(n)
 	case "G", "end":
-		l.cursor = max(0, len(l.visible)-1)
+		l.cursor = l.skipHeaders(max(0, len(l.visible)-1), -1)
 		l.clampScroll()
 	case "/":
 		l.mode = modeSearch
@@ -301,7 +301,11 @@ func (l *List) moveCursor(delta int) {
 	if len(l.visible) == 0 {
 		return
 	}
-	l.cursor = clamp(l.cursor+delta, 0, len(l.visible)-1)
+	dir := 1
+	if delta < 0 {
+		dir = -1
+	}
+	l.cursor = l.skipHeaders(clamp(l.cursor+delta, 0, len(l.visible)-1), dir)
 	l.clampScroll()
 }
 
@@ -309,19 +313,81 @@ func (l *List) page(dir int) {
 	if len(l.visible) == 0 {
 		return
 	}
-	l.cursor = clamp(l.cursor+dir*l.pageRows(), 0, len(l.visible)-1)
+	d := 1
+	if dir < 0 {
+		d = -1
+	}
+	l.cursor = l.skipHeaders(clamp(l.cursor+dir*l.pageRows(), 0, len(l.visible)-1), d)
 	l.clampScroll()
 }
 
-// gotoRow jumps the cursor to the row numbered n (1-indexed, matching the
-// gutter drawn by rowPrefix). n=1 — "g" with no count prefix — lands on the
-// top row, same as before "Ng" existed.
+// gotoRow jumps the cursor to the data row numbered n (1-indexed, matching the
+// gutter drawn by rowPrefix — header rows aren't numbered and can't be
+// targeted). n=1 — "g" with no count prefix — lands on the first data row,
+// same as before "Ng" existed.
 func (l *List) gotoRow(n int) {
 	if len(l.visible) == 0 {
 		return
 	}
-	l.cursor = clamp(n-1, 0, len(l.visible)-1)
+	nums := l.dataRowNumbers()
+	for i, num := range nums {
+		if num == n {
+			l.cursor = i
+			l.clampScroll()
+			return
+		}
+	}
+	// n is out of range (e.g. beyond the last data row): clamp to the last
+	// visible row, then nudge off a header if that's where it lands.
+	l.cursor = l.skipHeaders(clamp(len(l.visible)-1, 0, len(l.visible)-1), -1)
 	l.clampScroll()
+}
+
+// skipHeaders nudges pos to the nearest non-header row, preferring dir first
+// and falling back to the opposite direction, so cursor motions never land on
+// a Header row.
+func (l *List) skipHeaders(pos, dir int) int {
+	p := pos
+	for p >= 0 && p < len(l.visible) && isHeader(l.items[l.visible[p]]) {
+		p += dir
+	}
+	if p >= 0 && p < len(l.visible) {
+		return p
+	}
+	p = pos
+	for p >= 0 && p < len(l.visible) && isHeader(l.items[l.visible[p]]) {
+		p -= dir
+	}
+	if p >= 0 && p < len(l.visible) {
+		return p
+	}
+	return pos // all rows are headers (shouldn't happen); give up
+}
+
+// dataRowNumbers assigns each position in l.visible its 1-indexed data-row
+// number, skipping headers (which get 0 — unaddressable by Ng).
+func (l *List) dataRowNumbers() []int {
+	nums := make([]int, len(l.visible))
+	n := 0
+	for i, idx := range l.visible {
+		if isHeader(l.items[idx]) {
+			continue
+		}
+		n++
+		nums[i] = n
+	}
+	return nums
+}
+
+// dataRowCount is the number of non-header rows in l.visible.
+func (l *List) dataRowCount() int {
+	n := 0
+	for _, idx := range l.visible {
+		if !isHeader(l.items[idx]) {
+			n++
+		}
+	}
+	return n
 }
 
 // pageRows is how many rows fit in the viewport between the header and footer.
@@ -352,7 +418,7 @@ func (l *List) toggleSelectMode() {
 		return
 	}
 	l.selectMode = true
-	l.status = "select mode: space to toggle, enter for bulk operations"
+	l.status = chrome().SelectStatus
 }
 
 func (l *List) exitSelectMode() {
@@ -608,6 +674,9 @@ func (l *List) applyFilter() {
 	l.visible = filterItems(l.search.Value(), l.items)
 	if l.cursor >= len(l.visible) {
 		l.cursor = max(0, len(l.visible)-1)
+	}
+	if len(l.visible) > 0 {
+		l.cursor = l.skipHeaders(l.cursor, 1)
 	}
 	l.clampScroll()
 }

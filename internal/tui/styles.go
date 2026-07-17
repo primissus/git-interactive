@@ -10,11 +10,12 @@ import (
 // returns a ready theme; commands may tweak individual fields.
 type Styles struct {
 	// List chrome.
-	Title     lipgloss.Style
-	Header    lipgloss.Style // column header row
-	Help      lipgloss.Style // footer key hints
-	Status    lipgloss.Style // footer status/result line
-	Paginator lipgloss.Style // "page 1/3" indicator
+	Title         lipgloss.Style
+	Header        lipgloss.Style // column header row
+	SectionHeader lipgloss.Style // grouped-list section divider (e.g. "Staged")
+	Help          lipgloss.Style // footer key hints
+	Status        lipgloss.Style // footer status/result line
+	Paginator     lipgloss.Style // "page 1/3" indicator
 
 	// Rows.
 	Row         lipgloss.Style // ordinary row
@@ -90,11 +91,12 @@ func ColorizeGraphPrefix(s string) string {
 // DefaultStyles returns the standard gint theme.
 func DefaultStyles() Styles {
 	return Styles{
-		Title:     lipgloss.NewStyle().Bold(true).Foreground(colorAccent),
-		Header:    lipgloss.NewStyle().Bold(true).Foreground(colorFaint),
-		Help:      lipgloss.NewStyle().Foreground(colorFaint),
-		Status:    lipgloss.NewStyle().Foreground(colorAccent),
-		Paginator: lipgloss.NewStyle().Foreground(colorFaint),
+		Title:         lipgloss.NewStyle().Bold(true).Foreground(colorAccent),
+		Header:        lipgloss.NewStyle().Bold(true).Foreground(colorFaint),
+		SectionHeader: lipgloss.NewStyle().Bold(true).Foreground(colorFaint),
+		Help:          lipgloss.NewStyle().Foreground(colorFaint),
+		Status:        lipgloss.NewStyle().Foreground(colorAccent),
+		Paginator:     lipgloss.NewStyle().Foreground(colorFaint),
 
 		Row:         lipgloss.NewStyle(),
 		RowSelected: lipgloss.NewStyle().Bold(true).Foreground(colorInvert).Background(colorAccent),

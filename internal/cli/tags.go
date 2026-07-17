@@ -291,7 +291,7 @@ func buildTagOperations(ctx context.Context, r *git.Runner, f tagFilters, sortMo
 		return out
 	}
 
-	return []tui.Operation{
+	return tui.ApplyKeymap("tags", []tui.Operation{
 		{
 			Name: "checkout", Key: "C", Scope: tui.ScopeItem,
 			Confirm: &tui.Confirm{Kind: tui.ConfirmYesNo, Prompt: "Check out this tag? (detached HEAD)"},
@@ -369,5 +369,5 @@ func buildTagOperations(ctx context.Context, r *git.Runner, f tagFilters, sortMo
 				Refresh: refresh,
 			},
 		},
-	}
+	})
 }

@@ -67,32 +67,32 @@ func fileResolutionOps(ctx context.Context, r *git.Runner, sides git.ConflictSid
 		return refreshWith(verb + " " + path)
 	}
 
-	return []tui.Operation{
+	return tui.ApplyKeymap("conflict", []tui.Operation{
 		{
-			Name: "take ours (" + sides.Ours + ")", Key: "o", Scope: tui.ScopeItem,
+			Name: "take ours (" + sides.Ours + ")", ID: "take-ours", Key: "o", Scope: tui.ScopeItem,
 			Run: func(c tui.OpContext) tea.Cmd {
 				return resolve(c.Items, func(p string) error { return git.TakeOurs(ctx, r, p) }, "took "+sides.Ours+" for")
 			},
 		},
 		{
-			Name: "take theirs (" + sides.Theirs + ")", Key: "t", Scope: tui.ScopeItem,
+			Name: "take theirs (" + sides.Theirs + ")", ID: "take-theirs", Key: "t", Scope: tui.ScopeItem,
 			Run: func(c tui.OpContext) tea.Cmd {
 				return resolve(c.Items, func(p string) error { return git.TakeTheirs(ctx, r, p) }, "took "+sides.Theirs+" for")
 			},
 		},
 		{
-			Name: "take both", Key: "b", Scope: tui.ScopeItem,
+			Name: "take both", ID: "take-both", Key: "b", Scope: tui.ScopeItem,
 			Run: func(c tui.OpContext) tea.Cmd {
 				return resolve(c.Items, func(p string) error { return git.TakeBoth(ctx, r, p) }, "kept both sides of")
 			},
 		},
 		{
-			Name: "edit in $EDITOR", Key: "e", Scope: tui.ScopeItem,
+			Name: "edit in $EDITOR", ID: "edit", Key: "e", Scope: tui.ScopeItem,
 			Run: func(c tui.OpContext) tea.Cmd {
 				return editConflict(ctx, r, c.Items, pathOf, refreshWith)
 			},
 		},
-	}
+	})
 }
 
 // editConflict opens the conflicted file in $EDITOR, then stages it and
@@ -154,7 +154,7 @@ func continueSkipAbortOps(ctx context.Context, r *git.Runner, state *git.InProgr
 
 	ops := []tui.Operation{
 		{
-			Name: "continue " + op, Key: "c", Scope: tui.ScopeList,
+			Name: "continue " + op, ID: "continue", Key: "c", Scope: tui.ScopeList,
 			Run: func(tui.OpContext) tea.Cmd {
 				return advance(func() error { return state.Continue(ctx, r) }, "continued "+op+" to completion")
 			},
@@ -162,7 +162,7 @@ func continueSkipAbortOps(ctx context.Context, r *git.Runner, state *git.InProgr
 	}
 	if state.CanSkip() {
 		ops = append(ops, tui.Operation{
-			Name: "skip commit", Scope: tui.ScopeList,
+			Name: "skip commit", ID: "skip", Scope: tui.ScopeList,
 			Confirm: &tui.Confirm{Kind: tui.ConfirmYesNo, Prompt: "Skip the current commit?"},
 			Run: func(tui.OpContext) tea.Cmd {
 				return advance(func() error { return state.Skip(ctx, r) }, "skipped to "+op+" completion")
@@ -170,7 +170,7 @@ func continueSkipAbortOps(ctx context.Context, r *git.Runner, state *git.InProgr
 		})
 	}
 	ops = append(ops, tui.Operation{
-		Name: "abort " + op, Scope: tui.ScopeList,
+		Name: "abort " + op, ID: "abort", Scope: tui.ScopeList,
 		Confirm: &tui.Confirm{Kind: tui.ConfirmYesNo, Prompt: "Abort the in-progress " + op + "?"},
 		Run: func(tui.OpContext) tea.Cmd {
 			if err := state.Abort(ctx, r); err != nil {
@@ -181,7 +181,7 @@ func continueSkipAbortOps(ctx context.Context, r *git.Runner, state *git.InProgr
 			return tea.Quit
 		},
 	})
-	return ops
+	return tui.ApplyKeymap("conflict", ops)
 }
 
 // runConflictResolver runs the standalone conflict-resolution view over an

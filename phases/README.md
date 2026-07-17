@@ -12,3 +12,4 @@ Phased plan to build `gint` per [PROMPT.md](../PROMPT.md). Each phase has a `PLA
 | [p6](p6/PLAN.md) | `commit`, `merge` + wiring into earlier views |
 | [p7](p7/PLAN.md) | `rebase` + reusable conflict-resolution component |
 | [p8](p8/PLAN.md) | Hardening, polish, docs, v1 release |
+| [p9](p9/PLAN.md) | `resolve-conflicts`: per-hunk resolution, orphan conflicts, `status` hand-off |
