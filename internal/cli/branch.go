@@ -24,12 +24,17 @@ var copyToClipboard = clipboard.WriteAll
 // git-br.py reference (and phase 1's -I output): name, last commit subject,
 // relative date, author.
 type branchItem struct {
-	b      git.Branch
-	merged bool
+	b           git.Branch
+	merged      bool
+	displayName string // leaf segment + indent when tree view is active
 }
 
 func (i branchItem) Columns() []string {
-	return []string{i.b.Name, i.b.Subject, i.b.CommitDate, i.b.AuthorName}
+	name := i.b.Name
+	if i.displayName != "" {
+		name = i.displayName
+	}
+	return []string{name, i.b.Subject, i.b.CommitDate, i.b.AuthorName}
 }
 func (i branchItem) FilterValue() string { return i.b.Name }
 func (i branchItem) Current() bool       { return i.b.Head }
@@ -134,6 +139,19 @@ func sortModeFromFlag(s string) string {
 	default:
 		return "last-commit"
 	}
+}
+
+// sortModes is the cycle order for the runtime sort toggle (S).
+var sortModes = []string{"last-commit", "created", "author", "off"}
+
+// nextSortMode returns the mode that follows current in sortModes.
+func nextSortMode(current string) string {
+	for i, m := range sortModes {
+		if m == current {
+			return sortModes[(i+1)%len(sortModes)]
+		}
+	}
+	return sortModes[0]
 }
 
 // sortBranches reorders branches in place per mode. "off" leaves ListBranches'
@@ -273,13 +291,14 @@ func runBranch(cmd *cobra.Command, args []string) error {
 	}
 	flags := registeredFlags[cmd]
 	sortMode := sortModeFromFlag(flags.sort)
+	state := &branchViewState{sort: sortMode}
 
 	if len(args) == 1 {
-		return runBranchDirectMenu(cmd, runner, args[0], f, sortMode)
+		return runBranchDirectMenu(cmd, runner, args[0], f, state)
 	}
 
 	interactive := flags.resolveInteractive()
-	items, err := loadBranchItems(ctx, runner, f, sortMode, interactive)
+	items, err := loadBranchItems(ctx, runner, f, state.sort, interactive)
 	if err != nil {
 		return err
 	}
@@ -296,9 +315,9 @@ func runBranch(cmd *cobra.Command, args []string) error {
 		Title:         "gint branch",
 		Columns:       branchColumns(),
 		Items:         items,
-		Operations:    buildBranchOperations(ctx, runner, f, sortMode, true),
+		Operations:    buildBranchOperations(ctx, runner, f, state, true),
 		Density:       densityFromFlags(flags),
-		Sort:          flags.sort,
+		Sort:          state.sortLabel(),
 		InitialCursor: 1, // focus stays on the first real branch, past the create row
 	})
 	p := tea.NewProgram(list, tea.WithAltScreen(), tea.WithContext(ctx))
@@ -322,9 +341,9 @@ func branchFiltersFromFlags(cmd *cobra.Command) (branchFilters, error) {
 // runBranchDirectMenu implements `gint branch <name>`: skip the list, open the
 // operations menu for that branch directly, with fuzzy op matching (PROMPT.md
 // → branch, .context/glossary.md → "Direct-menu mode").
-func runBranchDirectMenu(cmd *cobra.Command, r *git.Runner, name string, f branchFilters, sortMode string) error {
+func runBranchDirectMenu(cmd *cobra.Command, r *git.Runner, name string, f branchFilters, state *branchViewState) error {
 	ctx := cmd.Context()
-	items, err := loadBranchItems(ctx, r, f, sortMode, false)
+	items, err := loadBranchItems(ctx, r, f, state.sort, false)
 	if err != nil {
 		return err
 	}
@@ -343,7 +362,7 @@ func runBranchDirectMenu(cmd *cobra.Command, r *git.Runner, name string, f branc
 		Title:           "gint branch " + name,
 		Columns:         branchColumns(),
 		Items:           items,
-		Operations:      buildBranchOperations(ctx, r, f, sortMode, false),
+		Operations:      buildBranchOperations(ctx, r, f, state, false),
 		InitialCursor:   idx,
 		OpenMenuOnStart: true,
 	})
@@ -352,16 +371,35 @@ func runBranchDirectMenu(cmd *cobra.Command, r *git.Runner, name string, f branc
 	return err
 }
 
+// branchViewState holds the mutable runtime state shared between the ops
+// closure and the refresh function inside buildBranchOperations.
+type branchViewState struct {
+	sort      string
+	grouped   bool
+	collapsed map[string]bool
+}
+
+func (s *branchViewState) sortLabel() string {
+	l := s.sort
+	if s.grouped {
+		l += " · tree"
+	}
+	return l
+}
+
 // buildBranchOperations returns the branch view's operation registry.
 // includeCreateRow must match the value used to build the list's initial
 // items so a post-mutation refresh keeps the same shape.
-func buildBranchOperations(ctx context.Context, r *git.Runner, f branchFilters, sortMode string, includeCreateRow bool) []tui.Operation {
+func buildBranchOperations(ctx context.Context, r *git.Runner, f branchFilters, state *branchViewState, includeCreateRow bool) []tui.Operation {
 	refresh := func() tea.Cmd {
-		items, err := loadBranchItems(ctx, r, f, sortMode, includeCreateRow)
+		items, err := loadBranchItems(ctx, r, f, state.sort, includeCreateRow)
 		if err != nil {
 			return tui.Status(err.Error())
 		}
-		return tui.SetItems(items)
+		if state.grouped {
+			items = applyGrouping(items, state.collapsed)
+		}
+		return tea.Batch(tui.SetSortLabel(state.sortLabel()), tui.SetItems(items))
 	}
 	refreshWith := func(status string) tea.Cmd {
 		return tea.Batch(tui.Status(status), refresh())
@@ -447,7 +485,15 @@ func buildBranchOperations(ctx context.Context, r *git.Runner, f branchFilters, 
 		},
 		{
 			Name: "rename", Key: "R", Scope: tui.ScopeItem,
-			Input: &tui.InputSpec{Prompt: "New name", Placeholder: "branch name", Validate: validate.BranchName},
+			Input: &tui.InputSpec{
+				Prompt: "New name", Placeholder: "branch name", Validate: validate.BranchName,
+				InitialFrom: func(items []tui.Item) string {
+					if b, ok := items[0].(branchItem); ok {
+						return b.b.Name
+					}
+					return ""
+				},
+			},
 			Run: func(c tui.OpContext) tea.Cmd {
 				b, ok := targetBranch(c.Items)
 				if !ok {
@@ -474,6 +520,19 @@ func buildBranchOperations(ctx context.Context, r *git.Runner, f branchFilters, 
 					return tui.Status("sha " + sha + " (clipboard unavailable: " + err.Error() + ")")
 				}
 				return tui.Status("copied sha " + sha + " (" + b.b.Name + ")")
+			},
+		},
+		{
+			Name: "copy name", Key: "c", Scope: tui.ScopeItem,
+			Run: func(c tui.OpContext) tea.Cmd {
+				b, ok := targetBranch(c.Items)
+				if !ok {
+					return tui.Status("select a branch first")
+				}
+				if err := copyToClipboard(b.b.Name); err != nil {
+					return tui.Status(b.b.Name + " (clipboard unavailable: " + err.Error() + ")")
+				}
+				return tui.Status("copied " + b.b.Name)
 			},
 		},
 		{
@@ -506,6 +565,41 @@ func buildBranchOperations(ctx context.Context, r *git.Runner, f branchFilters, 
 					return tui.Status(err.Error())
 				}
 				return refreshWith("created branch " + c.Input)
+			},
+		},
+		{
+			Name: "sort", Key: "S", Scope: tui.ScopeList,
+			Run: func(c tui.OpContext) tea.Cmd {
+				state.sort = nextSortMode(state.sort)
+				return tea.Batch(tui.Status("sorted by "+state.sort), refresh())
+			},
+		},
+		{
+			Name: "group", Key: "T", Scope: tui.ScopeList,
+			Run: func(c tui.OpContext) tea.Cmd {
+				state.grouped = !state.grouped
+				if !state.grouped {
+					state.collapsed = nil
+					return refreshWith("tree view off")
+				}
+				if state.collapsed == nil {
+					state.collapsed = map[string]bool{}
+				}
+				return refreshWith("tree view on")
+			},
+		},
+		{
+			Name: "toggle group", Scope: tui.ScopeItem,
+			Run: func(c tui.OpContext) tea.Cmd {
+				if len(c.Items) != 1 {
+					return tui.Status("select a group first")
+				}
+				g, ok := c.Items[0].(branchGroupItem)
+				if !ok {
+					return tui.Status("not a group")
+				}
+				state.collapsed[g.prefix] = !g.collapsed
+				return refresh()
 			},
 		},
 		{

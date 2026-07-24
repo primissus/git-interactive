@@ -24,6 +24,9 @@ type Chrome struct {
 	MenuPlaceholder string
 	MenuFooter      string
 
+	CommandPrompt      string
+	CommandPlaceholder string
+
 	InputPrompt string
 	InputFooter string
 
@@ -54,6 +57,9 @@ func defaultChrome() Chrome {
 		MenuPlaceholder: "filter operations",
 		MenuFooter:      "type to filter · ↑/↓ move · enter run · esc cancel",
 
+		CommandPrompt:      ": ",
+		CommandPlaceholder: "command",
+
 		InputPrompt: "› ",
 		InputFooter: "enter submit · esc cancel",
 
@@ -73,6 +79,7 @@ func defaultChrome() Chrome {
 			{"g / G", "jump to top / bottom (12g → row 12)"},
 			{"10j", "repeat a motion N times"},
 			{"/", "fuzzy search"},
+			{":", "command palette"},
 			{"enter", "open menu"},
 			{"X", "select mode"},
 			{"space / x", "toggle selection"},
@@ -108,6 +115,9 @@ type chromeOverride struct {
 	MenuPrompt      *string `json:"menu_prompt"`
 	MenuPlaceholder *string `json:"menu_placeholder"`
 	MenuFooter      *string `json:"menu_footer"`
+
+	CommandPrompt      *string `json:"command_prompt"`
+	CommandPlaceholder *string `json:"command_placeholder"`
 
 	InputPrompt *string `json:"input_prompt"`
 	InputFooter *string `json:"input_footer"`
@@ -197,6 +207,8 @@ func applyChromeOverride(c *Chrome, ov *chromeOverride) {
 	set(&c.MenuPrompt, ov.MenuPrompt)
 	set(&c.MenuPlaceholder, ov.MenuPlaceholder)
 	set(&c.MenuFooter, ov.MenuFooter)
+	set(&c.CommandPrompt, ov.CommandPrompt)
+	set(&c.CommandPlaceholder, ov.CommandPlaceholder)
 	set(&c.InputPrompt, ov.InputPrompt)
 	set(&c.InputFooter, ov.InputFooter)
 	set(&c.ConfirmPrompt, ov.ConfirmPrompt)

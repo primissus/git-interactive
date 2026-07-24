@@ -165,6 +165,9 @@ func (l *List) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case itemsMsg:
 		l.setItems([]Item(msg))
 		return l, nil
+	case sortLabelMsg:
+		l.sort = string(msg)
+		return l, nil
 	}
 
 	switch l.mode {
@@ -239,6 +242,8 @@ func (l *List) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 		l.mode = modeSearch
 		l.search.Focus()
 		return l, textinput.Blink
+	case ":":
+		return l, l.openCommandPalette()
 	case "?":
 		l.mode = modeHelp
 	case "X":
@@ -475,7 +480,7 @@ func (l *List) opByName(name string) (Operation, bool) {
 }
 
 func (l *List) openItemMenu(filter string) {
-	l.menu = newMenu(l.itemOps(), filter, &l.styles)
+	l.menu = newMenu(l.itemOps(), filter, &l.styles, false)
 	l.mode = modeMenu
 }
 
@@ -484,7 +489,22 @@ func (l *List) openMenuWith(ops []Operation) tea.Cmd {
 		l.status = "no operations available"
 		return nil
 	}
-	l.menu = newMenu(ops, "", &l.styles)
+	l.menu = newMenu(ops, "", &l.styles, false)
+	l.mode = modeMenu
+	return textinput.Blink
+}
+
+// openCommandPalette opens the `:` command-mode menu with the contextual
+// operations plus a built-in quit entry, and tab autocomplete.
+func (l *List) openCommandPalette() tea.Cmd {
+	var ops []Operation
+	if l.selectMode && len(l.selected) > 0 {
+		ops = l.bulkOps()
+	} else {
+		ops = l.itemOps()
+	}
+	ops = append(ops, Operation{ID: "builtin.quit", Name: "quit", Key: "", Scope: ScopeList})
+	l.menu = newMenu(ops, "", &l.styles, true)
 	l.mode = modeMenu
 	return textinput.Blink
 }
@@ -548,8 +568,12 @@ func (l *List) startOp(op Operation) tea.Cmd {
 
 func (l *List) runInput(op Operation, items []Item) tea.Cmd {
 	if op.Input != nil {
+		spec := *op.Input
+		if spec.InitialFrom != nil {
+			spec.Initial = spec.InitialFrom(items)
+		}
 		l.pending = &pending{op: op, items: items}
-		l.input = newInput(*op.Input, &l.styles)
+		l.input = newInput(spec, &l.styles)
 		l.mode = modeInput
 		return textinput.Blink
 	}
@@ -622,6 +646,10 @@ func (l *List) updateMenu(msg tea.Msg) tea.Cmd {
 	switch l.menu.state {
 	case menuChosen:
 		l.mode = modeList
+		if l.menu.chosen.ID == "builtin.quit" {
+			l.quitting = true
+			return tea.Quit
+		}
 		return l.startOp(l.menu.chosen)
 	case menuCanceled:
 		l.mode = modeList

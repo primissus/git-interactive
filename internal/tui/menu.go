@@ -18,15 +18,17 @@ const (
 )
 
 // menuModel is the context menu opened with Enter (or by `gint branch <name>`
-// with a pre-filled filter). It fuzzy-matches operation names so a user can
-// type to disambiguate — e.g. "pu" narrows to pull/push. Its options are the
-// operations the command registered for the current context.
+// with a pre-filled filter), or the `:` command palette. It fuzzy-matches
+// operation names so a user can type to disambiguate — e.g. "pu" narrows to
+// pull/push. Its options are the operations the command registered for the
+// current context.
 type menuModel struct {
 	ops     []Operation
 	matches []int // indexes into ops, in match order
 	cursor  int
 	filter  textinput.Model
 	styles  *Styles
+	command bool // true when opened via `:` palette
 
 	state  menuState
 	chosen Operation
@@ -34,15 +36,20 @@ type menuModel struct {
 
 // newMenu builds a menu over ops. initial pre-fills the fuzzy filter (used by
 // `gint branch <name>` disambiguation); pass "" for an empty filter.
-func newMenu(ops []Operation, initial string, st *Styles) menuModel {
+func newMenu(ops []Operation, initial string, st *Styles, command bool) menuModel {
 	ti := textinput.New()
-	ti.Prompt = chrome().MenuPrompt
-	ti.Placeholder = chrome().MenuPlaceholder
+	if command {
+		ti.Prompt = chrome().CommandPrompt
+		ti.Placeholder = chrome().CommandPlaceholder
+	} else {
+		ti.Prompt = chrome().MenuPrompt
+		ti.Placeholder = chrome().MenuPlaceholder
+	}
 	ti.SetValue(initial)
 	ti.CursorEnd()
 	ti.Focus()
 
-	m := menuModel{ops: ops, filter: ti, styles: st}
+	m := menuModel{ops: ops, filter: ti, styles: st, command: command}
 	m.recompute()
 	return m
 }
@@ -105,6 +112,13 @@ func (m *menuModel) Update(msg tea.Msg) tea.Cmd {
 			m.state = menuChosen
 		}
 		return nil
+	case "tab":
+		if m.command && len(m.matches) > 0 {
+			m.filter.SetValue(m.ops[m.matches[0]].Name)
+			m.filter.CursorEnd()
+			m.recompute()
+		}
+		return nil
 	}
 
 	var cmd tea.Cmd
@@ -135,6 +149,10 @@ func (m menuModel) View() string {
 		b.WriteString("\n")
 	}
 	b.WriteString("\n")
-	b.WriteString(m.styles.Help.Render(chrome().MenuFooter))
+	help := chrome().MenuFooter
+	if m.command {
+		help = "tab complete · ↑/↓ move · enter run · esc cancel"
+	}
+	b.WriteString(m.styles.Help.Render(help))
 	return m.styles.Overlay.Render(b.String())
 }
