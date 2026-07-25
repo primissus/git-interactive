@@ -67,16 +67,44 @@ type rebaseOutcome struct {
 
 func newRebaseCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:     "rebase",
+		Use:     "rebase [target] [base]",
 		Aliases: []string{"reb"},
 		Short:   "Interactive rebase with per-commit operations",
+		Args:    cobra.MaximumNArgs(2),
 	}
 	attachCommonFlags(cmd)
+	cmd.Flags().Bool("commits", false, "preview the commits in the rebase range (like `gint log`), then exit")
 	cmd.RunE = runRebase
 	return cmd
 }
 
-func runRebase(cmd *cobra.Command, _ []string) error {
+// rebaseTitle names the rebase in views and prompts: target first, then base.
+func rebaseTitle(target, base string) string {
+	return fmt.Sprintf("gint rebase %s onto %s", target, base)
+}
+
+// resolveDefaultBase returns the base for the one-arg form: the current branch
+// name, or HEAD's sha when detached.
+func resolveDefaultBase(ctx context.Context, r *git.Runner) (string, error) {
+	if b, err := git.CurrentBranch(ctx, r); err == nil && b != "" {
+		return b, nil
+	}
+	return git.RevParse(ctx, r, "HEAD")
+}
+
+// validateRebaseBranch checks that name is an existing local branch.
+func validateRebaseBranch(ctx context.Context, r *git.Runner, name string) error {
+	exists, err := git.BranchExists(ctx, r, name)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return fmt.Errorf("rebase: no such branch %q", name)
+	}
+	return nil
+}
+
+func runRebase(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 	r := git.NewRunner("")
 
@@ -86,7 +114,53 @@ func runRebase(cmd *cobra.Command, _ []string) error {
 	}
 
 	flags := registeredFlags[cmd]
-	plan, err := git.PlanRebase(ctx, r)
+	preview, _ := cmd.Flags().GetBool("commits")
+
+	// Resolve target and base: explicit args, or the branch selector. The arg
+	// order is target-first (the inverse of `git rebase <base> <branch>`); a
+	// single target rebases onto the current branch.
+	var target, base string
+	switch len(args) {
+	case 1, 2:
+		target = args[0]
+		if err := validateRebaseBranch(ctx, r, target); err != nil {
+			return err
+		}
+		if len(args) == 2 {
+			base = args[1]
+			if err := validateRebaseBranch(ctx, r, base); err != nil {
+				return err
+			}
+		} else {
+			var err error
+			base, err = resolveDefaultBase(ctx, r)
+			if err != nil {
+				return err
+			}
+		}
+		if target == base {
+			return fmt.Errorf("rebase: base and target must differ (both resolve to %q)", target)
+		}
+	default:
+		if !flags.resolveInteractive() {
+			return fmt.Errorf("rebase -I requires a target branch")
+		}
+		t, b, err := runRebaseSelector(cmd, r, preview)
+		if err != nil {
+			return err
+		}
+		if t == "" {
+			return nil // selector aborted before applying
+		}
+		target, base = t, b
+	}
+
+	if preview {
+		return runCommitsPreview(cmd, r, target, base, flags)
+	}
+
+	startBranch, _ := git.CurrentBranch(ctx, r)
+	plan, err := git.PlanRebaseRange(ctx, r, target, base)
 	if err != nil {
 		return err
 	}
@@ -110,7 +184,7 @@ func runRebase(cmd *cobra.Command, _ []string) error {
 
 	outcome := &rebaseOutcome{}
 	list := tui.New(tui.Config{
-		Title:      "gint rebase",
+		Title:      rebaseTitle(target, base),
 		Columns:    rebaseColumns(),
 		Items:      stepItems(steps),
 		Operations: buildRebasePlanOps(ctx, r, plan, steps, outcome),
@@ -132,7 +206,41 @@ func runRebase(cmd *cobra.Command, _ []string) error {
 	if outcome.err != nil {
 		return outcome.err
 	}
-	_, err = fmt.Fprintln(cmd.OutOrStdout(), "rebased "+plural2(len(steps)))
+	msg := "rebased " + plural2(len(steps))
+	if target != startBranch {
+		msg += " — now on " + target
+	}
+	_, err = fmt.Fprintln(cmd.OutOrStdout(), msg)
+	return err
+}
+
+// runCommitsPreview shows the commits in base..target exactly like `gint log`
+// — an interactive read-only list, or a plain table under -I — then exits.
+func runCommitsPreview(cmd *cobra.Command, r *git.Runner, target, base string, flags *commonFlags) error {
+	ctx := cmd.Context()
+	items, err := loadCommitRangeItems(ctx, r, base+".."+target, flags.full)
+	if err != nil {
+		return err
+	}
+	if len(items) == 0 {
+		_, err := fmt.Fprintln(cmd.OutOrStdout(), "nothing to rebase")
+		return err
+	}
+	if !flags.resolveInteractive() {
+		return tui.RenderTable(cmd.OutOrStdout(), logColumns(flags.full), items, tui.TableOptions{
+			Density: densityFromFlags(flags),
+			Header:  true,
+			Marker:  true,
+		})
+	}
+	list := tui.New(tui.Config{
+		Title:   rebaseTitle(target, base) + " (preview)",
+		Columns: logColumns(flags.full),
+		Items:   items,
+		Density: densityFromFlags(flags),
+	})
+	p := tea.NewProgram(list, tea.WithAltScreen(), tea.WithContext(ctx))
+	_, err = p.Run()
 	return err
 }
 

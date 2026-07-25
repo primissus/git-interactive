@@ -28,20 +28,27 @@ import (
 // `status` composes the same fileResolutionOps into its own list (see
 // buildStatusOperations), which is what "wire the component into status" means.
 
-// conflictItem is one conflicted file in the standalone resolver list.
-type conflictItem struct{ path string }
+// conflictItem is one conflicted file in the standalone resolver list. Rows
+// shown for an edit-stop (the stopped commit's changed files) carry
+// conflict: false — they are informational, and the per-file resolution ops
+// reject them.
+type conflictItem struct {
+	path     string
+	conflict bool
+}
 
 func (i conflictItem) Columns() []string   { return []string{i.path} }
 func (i conflictItem) FilterValue() string { return i.path }
 func (i conflictItem) Current() bool       { return false }
 
 // conflictPath extracts the single targeted file path from a resolver row.
+// Informational rows (edit-stop changed files) are rejected.
 func conflictPath(items []tui.Item) (string, bool) {
 	if len(items) != 1 {
 		return "", false
 	}
 	c, ok := items[0].(conflictItem)
-	if !ok {
+	if !ok || !c.conflict {
 		return "", false
 	}
 	return c.path, true
@@ -130,10 +137,10 @@ type conflictResult struct {
 }
 
 // continueSkipAbortOps builds the operation-level controls for an in-progress
-// git operation: continue, skip (when supported), and abort. Completing or
-// aborting the operation quits the resolver by recording the outcome in res and
-// returning tea.Quit; a continue that stops on the next conflict refreshes the
-// list instead.
+// git operation: continue, skip (when supported), and abort, each behind a
+// yes/no confirmation and bound to c/s/a. Completing or aborting the operation
+// quits the resolver by recording the outcome in res and returning tea.Quit; a
+// continue that stops on the next conflict refreshes the list instead.
 func continueSkipAbortOps(ctx context.Context, r *git.Runner, state *git.InProgressState, res *conflictResult, refresh func() tea.Cmd) []tui.Operation {
 	op := string(state.Op)
 
@@ -155,6 +162,7 @@ func continueSkipAbortOps(ctx context.Context, r *git.Runner, state *git.InProgr
 	ops := []tui.Operation{
 		{
 			Name: "continue " + op, ID: "continue", Key: "c", Scope: tui.ScopeList,
+			Confirm: &tui.Confirm{Kind: tui.ConfirmYesNo, Prompt: "Continue the " + op + "?"},
 			Run: func(tui.OpContext) tea.Cmd {
 				return advance(func() error { return state.Continue(ctx, r) }, "continued "+op+" to completion")
 			},
@@ -162,7 +170,7 @@ func continueSkipAbortOps(ctx context.Context, r *git.Runner, state *git.InProgr
 	}
 	if state.CanSkip() {
 		ops = append(ops, tui.Operation{
-			Name: "skip commit", ID: "skip", Scope: tui.ScopeList,
+			Name: "skip commit", ID: "skip", Key: "s", Scope: tui.ScopeList,
 			Confirm: &tui.Confirm{Kind: tui.ConfirmYesNo, Prompt: "Skip the current commit?"},
 			Run: func(tui.OpContext) tea.Cmd {
 				return advance(func() error { return state.Skip(ctx, r) }, "skipped to "+op+" completion")
@@ -170,7 +178,7 @@ func continueSkipAbortOps(ctx context.Context, r *git.Runner, state *git.InProgr
 		})
 	}
 	ops = append(ops, tui.Operation{
-		Name: "abort " + op, ID: "abort", Scope: tui.ScopeList,
+		Name: "abort " + op, ID: "abort", Key: "a", Scope: tui.ScopeList,
 		Confirm: &tui.Confirm{Kind: tui.ConfirmYesNo, Prompt: "Abort the in-progress " + op + "?"},
 		Run: func(tui.OpContext) tea.Cmd {
 			if err := state.Abort(ctx, r); err != nil {
@@ -187,6 +195,9 @@ func continueSkipAbortOps(ctx context.Context, r *git.Runner, state *git.InProgr
 // runConflictResolver runs the standalone conflict-resolution view over an
 // in-progress operation: a list of conflicted files with per-file resolution
 // plus continue/skip/abort. It is the view `rebase` enters when a rebase stops.
+// When the stop has no conflicts (a rebase `edit`), the rows are the stopped
+// commit's changed files — informational only; the per-file resolution ops
+// reject them via conflictPath.
 func runConflictResolver(cmd *cobra.Command, r *git.Runner, state *git.InProgressState) error {
 	ctx := cmd.Context()
 	sides := git.ResolveSides(ctx, r, state)
@@ -196,11 +207,25 @@ func runConflictResolver(cmd *cobra.Command, r *git.Runner, state *git.InProgres
 		if err != nil {
 			return nil, err
 		}
-		items := make([]tui.Item, len(files))
-		for i, f := range files {
-			items[i] = conflictItem{path: f}
+		if len(files) > 0 {
+			items := make([]tui.Item, len(files))
+			for i, f := range files {
+				items[i] = conflictItem{path: f, conflict: true}
+			}
+			return items, nil
 		}
-		return items, nil
+		if state.Op == git.OpRebase {
+			if p, err := git.ReadRebaseProgress(ctx, r); err == nil && p.StoppedSHA != "" {
+				if changed, err := git.ChangedFiles(ctx, r, p.StoppedSHA); err == nil {
+					items := make([]tui.Item, len(changed))
+					for i, f := range changed {
+						items[i] = conflictItem{path: f}
+					}
+					return items, nil
+				}
+			}
+		}
+		return nil, nil
 	}
 
 	items, err := load()
@@ -222,7 +247,7 @@ func runConflictResolver(cmd *cobra.Command, r *git.Runner, state *git.InProgres
 
 	list := tui.New(tui.Config{
 		Title:      resolverTitle(ctx, r, state, sides),
-		Columns:    []tui.Column{{Title: "conflicted file", MinWidth: 12, Flex: true, Density: tui.DensityShort}},
+		Columns:    []tui.Column{{Title: resolverColumnTitle(items), MinWidth: 12, Flex: true, Density: tui.DensityShort}},
 		Items:      items,
 		Operations: ops,
 	})
@@ -241,14 +266,31 @@ func runConflictResolver(cmd *cobra.Command, r *git.Runner, state *git.InProgres
 	return nil
 }
 
+// resolverColumnTitle labels the resolver's file column after the initial
+// load: conflicted files when there are any, else the stopped commit's files.
+// (The title is fixed at construction; if a later stop flips the mode, the
+// rows still reload correctly.)
+func resolverColumnTitle(items []tui.Item) string {
+	for _, it := range items {
+		if c, ok := it.(conflictItem); ok && c.conflict {
+			return "conflicted file"
+		}
+	}
+	return "changed file"
+}
+
 // resolverTitle summarizes the stopped operation for the resolver header,
-// including rebase branch/onto/progress when available.
+// including rebase branch/onto/progress and the stopped-at commit when
+// available.
 func resolverTitle(ctx context.Context, r *git.Runner, state *git.InProgressState, sides git.ConflictSides) string {
 	if state.Op == git.OpRebase {
 		if p, err := git.ReadRebaseProgress(ctx, r); err == nil && p.Branch != "" {
 			title := fmt.Sprintf("gint rebase — replaying %s onto %s", p.Branch, p.Onto)
 			if p.Total > 0 {
 				title += fmt.Sprintf(" (%d/%d)", p.Current, p.Total)
+			}
+			if p.StoppedSHA != "" {
+				title += fmt.Sprintf(" — stopped at %s %q", p.StoppedSHA, p.StoppedSubject)
 			}
 			return title
 		}

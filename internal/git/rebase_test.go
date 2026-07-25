@@ -220,6 +220,66 @@ func TestReadRebaseProgress(t *testing.T) {
 	if p.Total < 1 || p.Current < 1 {
 		t.Fatalf("progress = %+v, want current/total >= 1", p)
 	}
+	// The stop is on the replayed feature commit; REBASE_HEAD names it.
+	if p.StoppedSHA == "" || p.StoppedSubject != "feature change" {
+		t.Fatalf("stopped = %q %q, want <sha> %q", p.StoppedSHA, p.StoppedSubject, "feature change")
+	}
+}
+
+func TestPlanRebaseRange(t *testing.T) {
+	ctx := context.Background()
+	r, _ := setupConflictRebase(t)
+
+	// feature is one commit ("feature change") ahead of the fork point.
+	plan, err := PlanRebaseRange(ctx, r, "feature", "main")
+	if err != nil {
+		t.Fatalf("PlanRebaseRange: %v", err)
+	}
+	if len(plan.Commits) != 1 || plan.Commits[0].Subject != "feature change" {
+		t.Fatalf("plan.Commits = %+v, want [feature change]", plan.Commits)
+	}
+	if plan.Base != "main" || plan.Target != "feature" {
+		t.Fatalf("plan base/target = %q/%q, want main/feature", plan.Base, plan.Target)
+	}
+
+	// The reverse range replays main's unique commit ("main change").
+	rev, err := PlanRebaseRange(ctx, r, "main", "feature")
+	if err != nil {
+		t.Fatalf("PlanRebaseRange(reverse): %v", err)
+	}
+	if len(rev.Commits) != 1 || rev.Commits[0].Subject != "main change" {
+		t.Fatalf("reverse plan.Commits = %+v, want [main change]", rev.Commits)
+	}
+
+	// A branch rebased onto itself has nothing to replay.
+	none, err := PlanRebaseRange(ctx, r, "main", "main")
+	if err != nil {
+		t.Fatalf("PlanRebaseRange(same): %v", err)
+	}
+	if len(none.Commits) != 0 {
+		t.Fatalf("same-branch plan.Commits = %+v, want empty", none.Commits)
+	}
+}
+
+func TestChangedFiles(t *testing.T) {
+	ctx := context.Background()
+	r := newTestRepo(t)
+	writeFile(t, r, "a.txt", "a\n")
+	writeFile(t, r, "b.txt", "b\n")
+	mustGit(t, r, "add", ".")
+	mustGit(t, r, "commit", "-m", "two files")
+	head, err := RevParse(ctx, r, "HEAD")
+	if err != nil {
+		t.Fatalf("RevParse: %v", err)
+	}
+
+	files, err := ChangedFiles(ctx, r, head)
+	if err != nil {
+		t.Fatalf("ChangedFiles: %v", err)
+	}
+	if len(files) != 2 || files[0] != "a.txt" || files[1] != "b.txt" {
+		t.Fatalf("ChangedFiles = %v, want [a.txt b.txt]", files)
+	}
 }
 
 func TestResolveSidesMerge(t *testing.T) {

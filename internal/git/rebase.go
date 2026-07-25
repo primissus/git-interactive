@@ -9,11 +9,6 @@ import (
 	"strings"
 )
 
-// rebaseWindow caps how many commits the planning view offers when the branch
-// has no upstream to fork from — a full-history rebase list is rarely wanted
-// and slow to render.
-const rebaseWindow = 20
-
 // RebaseOp is the action chosen for one commit in the rebase plan. The values
 // match git's interactive-rebase todo keywords, except OpReword, which we drive
 // with an `exec git commit --amend` line so the message can be captured up
@@ -37,52 +32,21 @@ type RebaseStep struct {
 }
 
 // RebasePlan is the set of commits a rebase will replay, newest first (matching
-// the log view), plus the base they sit on.
+// the log view), plus the base they sit on and the branch being rebased.
 type RebasePlan struct {
 	Commits []Commit
-	Base    string // the commit to rebase onto; empty when Root is true
-	Root    bool   // rebase from the root commit (--root) — Base has no parent
+	Base    string // the branch/ref to rebase onto
+	Target  string // the branch being rebased; "" means HEAD
 }
 
-// PlanRebase gathers the commits eligible for interactive rebase. When the
-// branch has an upstream it offers the commits ahead of the merge-base;
-// otherwise it offers the most recent commits (capped at rebaseWindow) rebased
-// onto the parent of the oldest.
-func PlanRebase(ctx context.Context, r *Runner) (RebasePlan, error) {
-	if upstream, err := r.Run(ctx, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"); err == nil {
-		up := strings.TrimSpace(upstream)
-		base, err := mergeBase(ctx, r, "HEAD", up)
-		if err != nil {
-			return RebasePlan{}, err
-		}
-		commits, err := ListCommitsRange(ctx, r, base+"..HEAD")
-		if err != nil {
-			return RebasePlan{}, err
-		}
-		return RebasePlan{Commits: commits, Base: base}, nil
-	}
-
-	all, err := ListCommits(ctx, r)
+// PlanRebaseRange gathers the commits an interactive rebase of target onto
+// base will replay — exactly `git log base..target`, newest first.
+func PlanRebaseRange(ctx context.Context, r *Runner, target, base string) (RebasePlan, error) {
+	commits, err := ListCommitsRange(ctx, r, base+".."+target)
 	if err != nil {
 		return RebasePlan{}, err
 	}
-	if len(all) == 0 {
-		return RebasePlan{}, nil
-	}
-	if len(all) > rebaseWindow {
-		commits := all[:rebaseWindow]
-		return RebasePlan{Commits: commits, Base: commits[len(commits)-1].SHA + "^"}, nil
-	}
-
-	oldest := all[len(all)-1]
-	root, err := rootCommit(ctx, r)
-	if err != nil {
-		return RebasePlan{}, err
-	}
-	if oldest.SHA == root {
-		return RebasePlan{Commits: all, Root: true}, nil
-	}
-	return RebasePlan{Commits: all, Base: oldest.SHA + "^"}, nil
+	return RebasePlan{Commits: commits, Base: base, Target: target}, nil
 }
 
 // ListCommitsRange returns the commits in revRange (e.g. "base..HEAD"), newest
@@ -95,26 +59,21 @@ func ListCommitsRange(ctx context.Context, r *Runner, revRange string) ([]Commit
 	return parseCommits(out), nil
 }
 
-func mergeBase(ctx context.Context, r *Runner, a, b string) (string, error) {
-	out, err := r.Run(ctx, "merge-base", a, b)
+// ChangedFiles lists the paths a commit touched, for the edit-stop status view.
+// --root makes a root commit report its files as a creation event instead of
+// an empty diff.
+func ChangedFiles(ctx context.Context, r *Runner, sha string) ([]string, error) {
+	out, err := r.Run(ctx, "diff-tree", "--root", "--no-commit-id", "--name-only", "-r", sha)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	return strings.TrimSpace(out), nil
-}
-
-func rootCommit(ctx context.Context, r *Runner) (string, error) {
-	out, err := r.Run(ctx, "rev-list", "--max-parents=0", "HEAD")
-	if err != nil {
-		return "", err
+	var files []string
+	for _, line := range strings.Split(out, "\n") {
+		if line = strings.TrimSpace(line); line != "" {
+			files = append(files, line)
+		}
 	}
-	// A repo can have several root commits; the last line is the oldest along
-	// HEAD's first-parent history.
-	fields := strings.Fields(out)
-	if len(fields) == 0 {
-		return "", nil
-	}
-	return fields[len(fields)-1], nil
+	return files, nil
 }
 
 // RunRebasePlan starts an interactive rebase driven by the plan's per-commit
@@ -149,11 +108,9 @@ func RunRebasePlan(ctx context.Context, r *Runner, plan RebasePlan, steps []Reba
 		"GIT_EDITOR=true",
 	}
 
-	args := []string{"rebase", "-i"}
-	if plan.Root {
-		args = append(args, "--root")
-	} else {
-		args = append(args, plan.Base)
+	args := []string{"rebase", "-i", plan.Base}
+	if plan.Target != "" {
+		args = append(args, plan.Target)
 	}
 	_, err = r.RunEnv(ctx, env, args...)
 	return err
@@ -225,10 +182,12 @@ func shellQuote(s string) string {
 
 // RebaseProgress describes a stopped rebase for the resume header.
 type RebaseProgress struct {
-	Branch  string // the branch being rebased
-	Onto    string // the base it is being replayed onto
-	Current int    // 1-based index of the commit git stopped on
-	Total   int    // total commits in the rebase
+	Branch         string // the branch being rebased
+	Onto           string // the base it is being replayed onto
+	Current        int    // 1-based index of the commit git stopped on
+	Total          int    // total commits in the rebase
+	StoppedSHA     string // short sha of the commit git stopped on ("" when unknown)
+	StoppedSubject string // that commit's subject line
 }
 
 // ReadRebaseProgress reads the current rebase's branch, onto, and progress
@@ -254,6 +213,14 @@ func ReadRebaseProgress(ctx context.Context, r *Runner) (RebaseProgress, error) 
 		p.Current = cur
 		if total, ok := readInt(filepath.Join(dir, "rebase-apply", "last")); ok {
 			p.Total = total
+		}
+	}
+
+	// REBASE_HEAD names the commit currently being replayed, for both
+	// merge-based and am-based rebases; it may be absent in odd states.
+	if out, err := r.Run(ctx, "log", "-1", "--pretty=format:%h\x1f%s", "REBASE_HEAD"); err == nil {
+		if sha, subject, ok := strings.Cut(strings.TrimSpace(out), "\x1f"); ok {
+			p.StoppedSHA, p.StoppedSubject = sha, subject
 		}
 	}
 	return p, nil

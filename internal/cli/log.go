@@ -68,10 +68,28 @@ func loadLogItems(ctx context.Context, r *git.Runner, full bool) ([]tui.Item, er
 	if err != nil {
 		return nil, err
 	}
+	return loadCommitItems(ctx, r, commits, full)
+}
+
+// loadCommitRangeItems adapts the commits in revRange (e.g. "base..target") to
+// tui.Items — the data source for `gint rebase --commits`.
+func loadCommitRangeItems(ctx context.Context, r *git.Runner, revRange string, full bool) ([]tui.Item, error) {
+	commits, err := git.ListCommitsRange(ctx, r, revRange)
+	if err != nil {
+		return nil, err
+	}
+	return loadCommitItems(ctx, r, commits, full)
+}
+
+// loadCommitItems adapts commits (newest first) to tui.Items, resolving each
+// commit's worktree column from the current worktree list. The row matching
+// HEAD gets the current-item marker — in a range view that may be no row.
+func loadCommitItems(ctx context.Context, r *git.Runner, commits []git.Commit, full bool) ([]tui.Item, error) {
 	branchWT, err := worktreeByBranch(ctx, r)
 	if err != nil {
 		return nil, err
 	}
+	headSHA, _ := git.RevParse(ctx, r, "HEAD") // "" on an unborn branch; no row matches
 
 	items := make([]tui.Item, len(commits))
 	for i, c := range commits {
@@ -82,7 +100,7 @@ func loadLogItems(ctx context.Context, r *git.Runner, full bool) ([]tui.Item, er
 				break
 			}
 		}
-		items[i] = logItem{c: c, full: full, wtDir: wtDir, isHead: i == 0}
+		items[i] = logItem{c: c, full: full, wtDir: wtDir, isHead: c.SHA == headSHA}
 	}
 	return items, nil
 }

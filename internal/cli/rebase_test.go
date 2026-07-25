@@ -32,12 +32,17 @@ func TestConflictPath(t *testing.T) {
 	if _, ok := conflictPath(nil); ok {
 		t.Error("conflictPath(nil) should be false")
 	}
-	if _, ok := conflictPath([]tui.Item{conflictItem{"a"}, conflictItem{"b"}}); ok {
+	if _, ok := conflictPath([]tui.Item{conflictItem{path: "a", conflict: true}, conflictItem{path: "b", conflict: true}}); ok {
 		t.Error("conflictPath with two rows should be false")
 	}
-	got, ok := conflictPath([]tui.Item{conflictItem{"f.txt"}})
+	got, ok := conflictPath([]tui.Item{conflictItem{path: "f.txt", conflict: true}})
 	if !ok || got != "f.txt" {
 		t.Errorf("conflictPath = %q, %v; want f.txt, true", got, ok)
+	}
+	// An informational edit-stop row (changed file, no conflict) is rejected:
+	// the per-file resolution ops only apply to conflicted files.
+	if _, ok := conflictPath([]tui.Item{conflictItem{path: "f.txt"}}); ok {
+		t.Error("conflictPath(non-conflict row) should be false")
 	}
 }
 
@@ -51,5 +56,95 @@ func TestStatusConflictPath(t *testing.T) {
 	clean := statusItem{e: git.StatusEntry{Code: "M.", Path: "m.txt"}}
 	if _, ok := statusConflictPath([]tui.Item{clean}); ok {
 		t.Error("statusConflictPath(non-conflict) should be false")
+	}
+}
+
+func TestRebaseSelectItemColumns(t *testing.T) {
+	b := git.Branch{Name: "feat/x", Subject: "some work", CommitDate: "2 days ago", AuthorName: "Test User"}
+
+	plain := rebaseSelectItem{b: b}
+	if got := plain.Columns()[0]; got != "feat/x" {
+		t.Fatalf("unmarked name column = %q, want feat/x", got)
+	}
+	base := rebaseSelectItem{b: b, role: "base"}
+	if got := base.Columns()[0]; got != "(base) feat/x" {
+		t.Fatalf("base name column = %q, want (base) feat/x", got)
+	}
+	target := rebaseSelectItem{b: b, role: "target"}
+	if got := target.Columns()[0]; got != "(target) feat/x" {
+		t.Fatalf("target name column = %q, want (target) feat/x", got)
+	}
+	// The fuzzy filter matches the bare branch name, not the mark prefix.
+	if plain.FilterValue() != "feat/x" {
+		t.Fatalf("FilterValue = %q, want feat/x", plain.FilterValue())
+	}
+}
+
+func TestRebaseMarksRole(t *testing.T) {
+	m := &rebaseMarks{base: "main", target: "feat/x"}
+	if got := m.role("main"); got != "base" {
+		t.Errorf("role(main) = %q, want base", got)
+	}
+	if got := m.role("feat/x"); got != "target" {
+		t.Errorf("role(feat/x) = %q, want target", got)
+	}
+	if got := m.role("other"); got != "" {
+		t.Errorf("role(other) = %q, want empty", got)
+	}
+	// Empty marks mark nothing.
+	empty := &rebaseMarks{}
+	if got := empty.role("main"); got != "" {
+		t.Errorf("empty marks role(main) = %q, want empty", got)
+	}
+}
+
+// runMarkOp drives a selector mark operation against a single row, returning
+// the resulting status/items command effects (executed synchronously — the
+// ops emit tea.Batch of plain msgs).
+func runMarkOp(t *testing.T, opName string, marks *rebaseMarks, branches []git.Branch, row int) {
+	t.Helper()
+	applied := false
+	ops := buildRebaseSelectOps(marks, branches, &applied)
+	for _, op := range ops {
+		if op.Name != opName {
+			continue
+		}
+		items := rebaseSelectItems(branches, marks)
+		cmd := op.Run(tui.OpContext{Items: []tui.Item{items[row]}})
+		if cmd == nil {
+			return
+		}
+		// Drain the returned command's messages; SetItems/Status need no
+		// further handling here — marks are mutated synchronously by Run.
+		_ = cmd()
+		return
+	}
+	t.Fatalf("operation %q not found", opName)
+}
+
+func TestRebaseSelectMarkOps(t *testing.T) {
+	branches := []git.Branch{{Name: "main"}, {Name: "feat/x"}, {Name: "feat/y"}}
+	marks := &rebaseMarks{}
+
+	// Mark base and target.
+	runMarkOp(t, "select base", marks, branches, 0)
+	if marks.base != "main" {
+		t.Fatalf("marks.base = %q, want main", marks.base)
+	}
+	runMarkOp(t, "select target", marks, branches, 1)
+	if marks.target != "feat/x" {
+		t.Fatalf("marks.target = %q, want feat/x", marks.target)
+	}
+
+	// Overwriting a mark is allowed.
+	runMarkOp(t, "select base", marks, branches, 2)
+	if marks.base != "feat/y" {
+		t.Fatalf("marks.base after overwrite = %q, want feat/y", marks.base)
+	}
+
+	// Marking the other role's branch is rejected and keeps the old mark.
+	runMarkOp(t, "select base", marks, branches, 1)
+	if marks.base != "feat/y" {
+		t.Fatalf("marks.base after rejected mark = %q, want feat/y (unchanged)", marks.base)
 	}
 }
