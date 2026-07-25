@@ -127,3 +127,14 @@
 - **Why:** the audit's one real bug (a dead `reset` shortcut bound to the reserved `X` in `log`) and the `graph -I` missing-marker cosmetic were fixed; these two remaining items are intentional, harmless, and churning them (remapping the obvious pop key, or building per-view sort parity) would cost more than the consistency gained. Recorded so a future audit doesn't re-flag them.
 - **Rejected:** remapping stash `p`; making `-S` a hard error on commands that ignore it; implementing full worktree/commit sort parity in v1.
 - **Status:** current
+
+## 2026-07 · branch view ergonomics (p11)
+
+- **`G` kept as jump-to-bottom everywhere** — the tree-grouping key is `T` (tree), also reachable via `:group`. No per-view override needed.
+- **Sort cycles, no chooser** — `S` (Shift+S) advances through sort modes one at a time, showing the current mode in the title and a status line. This is faster than a chooser menu and more vim-like.
+- **Recursive collapsible tree** — `/` splits build a prefix tree; directories sort alphabetically first, then branches in the active sort order. Branches show only the leaf segment with progressive indentation (2 spaces/level). Groups implement `DefaultActioner` → enter toggles collapse. No framework changes needed — groups are normal items with a `toggle group` op.
+- **`:` command palette is a shared framework feature** — opens the operation menu (item or bulk) with a `:` prompt, tab autocomplete to the top fuzzy match, and a built-in `quit` entry. Aligns with p10 task 2 design (same `Chrome.CommandPrompt`, same menu-open mechanic). The palette is built on top of the existing `menuModel` with a `command bool` flag.
+- **Rename pre-fill via `InitialFrom`** — `InputSpec` gains `InitialFrom func([]Item) string`, resolved at invocation time so the rename op can read the current branch name. Static `Initial` is unchanged; `InitialFrom` wins when both are set.
+- **`c` copies branch name** — reuses the existing `copyToClipboard` stub pattern from `y` (copy sha). No framework change.
+- **`sortLabelMsg` / `SetSortLabel`** — small framework addition so commands can update the title's `sort:` hint at runtime, composed by the command (e.g. `sort <mode>` or `sort <mode> · tree`).
+- **Why:** the user wanted vim-like ergonomics — `:` for commands, cycle-sort, tree grouping — plus pre-filled rename. Each feature reuses existing framework patterns (ops, DefaultActioner, InputSpec) so surface area is minimal.

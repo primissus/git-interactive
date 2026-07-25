@@ -78,6 +78,11 @@ type InputSpec struct {
 	Placeholder string
 	// Initial pre-fills the field (e.g. an existing name for rename).
 	Initial string
+	// InitialFrom, when non-nil, resolves the initial value from the op's target
+	// items at invocation time (e.g. pre-filling rename with the branch name).
+	// It is called only when InitialAt is non-nil and after items are resolved;
+	// its result overrides Initial.
+	InitialFrom func([]Item) string
 	// AllowEmpty lets a blank submission through (for genuinely optional inputs
 	// like a stash message or lock reason). By default an empty field cannot be
 	// submitted, so required inputs need no extra guard.
@@ -105,4 +110,13 @@ type itemsMsg []Item
 // cursor position where possible and clearing any active selection.
 func SetItems(items []Item) tea.Cmd {
 	return func() tea.Msg { return itemsMsg(items) }
+}
+
+// sortLabelMsg sets the list's sort hint in the title.
+type sortLabelMsg string
+
+// SetSortLabel returns a command that sets the sort hint shown in the title
+// line, e.g. "created" or "created · tree".
+func SetSortLabel(label string) tea.Cmd {
+	return func() tea.Msg { return sortLabelMsg(label) }
 }

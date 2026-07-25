@@ -13,6 +13,9 @@
 - **Help overlay (`?`)** → lists the shared nav keys plus the current view's operation shortcuts.
 - **Column tint** → `Column.Color`/`Column.Render` give each column its own hue on ordinary rows; graph lanes are colored by column position. Suppressed on the cursor/current row and in `-I` output.
 - **shell-init wrapper** → `gint shell-init [bash|zsh|fish]` prints a `gint()` function that makes `worktree` checkout `cd` the calling shell via a temp `--cd-file`.
+- **Command palette (`:`)** → shared framework feature: opens the operation menu with a `:` prompt, tab autocomplete, and a built-in `:quit`. Fuzzy-filter operations like the context menu. Present in every view.
+- **Branch grouping (tree mode)** → `T` toggles a collapsible tree view of branches split on `/`. Directories are sorted alphabetically; branches within keep the active sort order. Enter on a directory row expands/collapses it. Branches show only their leaf name with progressive indentation.
+- **Dynamic rename pre-fill** → `InputSpec.InitialFrom` resolves an initial text value from the operation's target items at invocation time, so rename (`R`) pre-fills the input with the current branch name.
 
 ## Main entities
 - **Command views** → `branch`(br), `worktree`(wt), `graph-branch`(grb), `log`(lg), `graph`(gr), `rebase`(reb), `merge`(mrg), `status`(st), `add`, `stash`(sth), `commit`(cm).

@@ -10,6 +10,7 @@ All interactive views behave consistently:
 - **Pagination**: list is paginated to the terminal/viewport height (like `less`).
 - **Search**: `/` starts a fuzzy search.
 - **Enter**: opens a context menu of operations for the selected item.
+- **`:` command palette**: opens the operation menu with a `:` prompt, autocomplete (tab), and built-in `:quit` in every view. Fuzzy-filter operations like the context menu.
 - **Confirmations**: destructive operations always ask for confirmation. Dangerous ones require typed confirmation (e.g. type `force` to force-delete, `delete all` for bulk delete).
 - **Select mode**: `Shift+X` enters multi-select for bulk operations.
 - **Colors/markers**: current item (e.g. current branch) is highlighted with a color and a dot marker.
@@ -54,11 +55,12 @@ Shortcuts trigger the same confirmations as the menu.
 
 Interactive tabular list of branches. Columns: branch name, last commit, last author, relative date.
 
-- **Sort**: last commit, created, author, off.
+- **Sort**: last commit, created, author, off. Runtime sort cycling via `S` (Shift+S) through the four modes, with the title updating to show the current mode.
 - **Filter**: by author; by date (last 1 day, 3 days, 1 week, 1 month, year to date, 1 year); merged / not-merged into the current branch; "gone" (upstream deleted — pairs well with bulk archive/delete).
 - **Search**: fuzzy find with `/`.
 - **Create**: an entry above the list (default focus stays on the first branch) to create a new branch.
-- **Enter menu**: checkout, delete (confirm; force-delete requires typing `force`), pull, push, rename, copy sha (with its own shortcut).
+- **Tree grouping** (`T`, or `:group`): toggles a collapsible tree view that groups branches by their `/`-separated path segments. Directories are sorted alphabetically; branches within a directory keep the active sort order. Enter on a directory row expands or collapses it. Branches show only their leaf name with progressive indentation. Disabled in `-I` mode and direct-menu mode.
+- **Enter menu**: checkout, delete (confirm; force-delete requires typing `force`), pull, push, rename (pre-filled with the current branch name), copy sha (`y`), copy name (`c`).
 - **Select mode** (`Shift+X`) bulk operations:
   - archive: tag as `archive/<branch-name>` and delete the branch
   - delete: confirm by typing `delete all`
