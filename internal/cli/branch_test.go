@@ -1,10 +1,15 @@
 package cli
 
 import (
+	"context"
+	"fmt"
 	"testing"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
+
 	"git-interact/internal/git"
+	"git-interact/internal/tui"
 )
 
 func TestFilterBranchesAuthor(t *testing.T) {
@@ -102,5 +107,103 @@ func TestSortModeFromFlag(t *testing.T) {
 		if got := sortModeFromFlag(in); got != want {
 			t.Errorf("sortModeFromFlag(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+// runBranchOp finds an operation by name in the branch view's registry and
+// drives it with the given items, returning its cmd synchronously.
+func runBranchOp(t *testing.T, ctx context.Context, r *git.Runner, opName string, f branchFilters, state *branchViewState, items []tui.Item) (tea.Cmd, error) {
+	t.Helper()
+	ops := buildBranchOperations(ctx, r, f, state, true)
+	for _, op := range ops {
+		if op.Name != opName {
+			continue
+		}
+		return op.Run(tui.OpContext{Items: items}), nil
+	}
+	return nil, fmt.Errorf("operation %q not found", opName)
+}
+
+func TestBranchRebaseOpSetsState(t *testing.T) {
+	r := newTestRepo(t)
+	commitFile(t, r, "a", "a", "first commit")
+	mustGit(t, r, "checkout", "-b", "feature")
+	commitFile(t, r, "b", "b", "second commit")
+	mustGit(t, r, "checkout", "main")
+
+	ctx := context.Background()
+	state := &branchViewState{}
+
+	items, err := loadBranchItems(ctx, r, branchFilters{}, "last-commit", true)
+	if err != nil {
+		t.Fatalf("loadBranchItems: %v", err)
+	}
+
+	// Find the feature branch item (index 1: row 0 is create row, 1 is main,
+	// 2 is feature).
+	var featureItem tui.Item
+	for _, it := range items {
+		if b, ok := it.(branchItem); ok && b.b.Name == "feature" {
+			featureItem = it
+			break
+		}
+	}
+	if featureItem == nil {
+		t.Fatal("feature branch not found in items")
+	}
+
+	cmd, err := runBranchOp(t, ctx, r, "rebase onto this branch", branchFilters{}, state, []tui.Item{featureItem})
+	if err != nil {
+		t.Fatalf("runBranchOp: %v", err)
+	}
+	if state.rebaseBase != "feature" {
+		t.Fatalf("state.rebaseBase = %q, want %q", state.rebaseBase, "feature")
+	}
+	if cmd == nil {
+		t.Fatal("command is nil, want tea.Quit")
+	}
+	if _, ok := cmd().(tea.QuitMsg); !ok {
+		t.Fatalf("command msg is not tea.QuitMsg")
+	}
+}
+
+func TestBranchRebaseOpGuardCurrentBranch(t *testing.T) {
+	r := newTestRepo(t)
+	commitFile(t, r, "a", "a", "first commit")
+	mustGit(t, r, "checkout", "-b", "feature")
+	commitFile(t, r, "b", "b", "second commit")
+	mustGit(t, r, "checkout", "main")
+
+	ctx := context.Background()
+	state := &branchViewState{}
+
+	items, err := loadBranchItems(ctx, r, branchFilters{}, "last-commit", true)
+	if err != nil {
+		t.Fatalf("loadBranchItems: %v", err)
+	}
+
+	var mainItem tui.Item
+	for _, it := range items {
+		if b, ok := it.(branchItem); ok && b.b.Name == "main" {
+			mainItem = it
+			break
+		}
+	}
+	if mainItem == nil {
+		t.Fatal("main branch not found in items")
+	}
+
+	cmd, err := runBranchOp(t, ctx, r, "rebase onto this branch", branchFilters{}, state, []tui.Item{mainItem})
+	if err != nil {
+		t.Fatalf("runBranchOp: %v", err)
+	}
+	if state.rebaseBase != "" {
+		t.Fatalf("state.rebaseBase = %q, want empty (should not be set)", state.rebaseBase)
+	}
+	if cmd == nil {
+		t.Fatal("command is nil, want status msg")
+	}
+	if _, ok := cmd().(tea.QuitMsg); ok {
+		t.Fatal("guard op returned tea.QuitMsg, should return status msg")
 	}
 }

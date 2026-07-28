@@ -66,6 +66,7 @@ Interactive tabular list of branches. Columns: branch name, last commit, last au
   - delete: confirm by typing `delete all`
   - force delete: confirm by typing `force delete`
 - **Merge** (`Shift+M`): merge the selected branch into the current one, reusing the `merge` command's confirmation flow.
+- **Rebase** (`B`): rebase the current branch onto the selected one via the interactive `rebase` plan view; returns to the branch list afterwards.
 - **Flags**: common flags plus `-b`/`--new` (create branch), `-D`/`--delete`, `-m`/`--rename`.
 - `gint branch <branchname>` (no options): shows an operations menu for that branch, expecting input; supports fuzzy matching (`pull` lowercase vs `Push` uppercase to disambiguate).
 

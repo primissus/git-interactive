@@ -159,6 +159,16 @@ func runRebase(cmd *cobra.Command, args []string) error {
 		return runCommitsPreview(cmd, r, target, base, flags)
 	}
 
+	return runRebaseInteractive(cmd, r, target, base, flags)
+}
+
+// runRebaseInteractive runs the plan view (per-commit pick/reword/edit/
+// squash/fixup/drop + submit), executes the rebase on submit, and — if the
+// rebase stops on a conflict or an edit — hands off to the conflict resolver.
+// It is the shared core used by the `gint rebase <target> <base>` CLI and the
+// branch view's rebase operation.
+func runRebaseInteractive(cmd *cobra.Command, r *git.Runner, target, base string, flags *commonFlags) error {
+	ctx := cmd.Context()
 	startBranch, _ := git.CurrentBranch(ctx, r)
 	plan, err := git.PlanRebaseRange(ctx, r, target, base)
 	if err != nil {

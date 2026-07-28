@@ -15,3 +15,4 @@ Phased plan to build `gint` per [PROMPT.md](../PROMPT.md). Each phase has a `PLA
 | [p9](p9/PLAN.md) | `resolve-conflicts`: per-hunk resolution, orphan conflicts, `status` hand-off |
 | [p10](p10/PLAN.md) | `rebase` target/base args, branch selector, `:` palette, in-progress status |
 | [p11](p11/PLAN.md) | `branch` ergonomics: copy name, tree grouping, runtime sort, `:` palette, rename pre-fill |
+| [p12](p12/PLAN.md) | `branch` rebase operation: interactive rebase from branch list |

@@ -298,12 +298,11 @@ func runBranch(cmd *cobra.Command, args []string) error {
 	}
 
 	interactive := flags.resolveInteractive()
-	items, err := loadBranchItems(ctx, runner, f, state.sort, interactive)
-	if err != nil {
-		return err
-	}
-
 	if !interactive {
+		items, err := loadBranchItems(ctx, runner, f, state.sort, false)
+		if err != nil {
+			return err
+		}
 		return tui.RenderTable(cmd.OutOrStdout(), branchColumns(), items, tui.TableOptions{
 			Density: densityFromFlags(flags),
 			Header:  true,
@@ -311,18 +310,35 @@ func runBranch(cmd *cobra.Command, args []string) error {
 		})
 	}
 
-	list := tui.New(tui.Config{
-		Title:         "gint branch",
-		Columns:       branchColumns(),
-		Items:         items,
-		Operations:    buildBranchOperations(ctx, runner, f, state, true),
-		Density:       densityFromFlags(flags),
-		Sort:          state.sortLabel(),
-		InitialCursor: 1, // focus stays on the first real branch, past the create row
-	})
-	p := tea.NewProgram(list, tea.WithAltScreen(), tea.WithContext(ctx))
-	_, err = p.Run()
-	return err
+	for {
+		items, err := loadBranchItems(ctx, runner, f, state.sort, true)
+		if err != nil {
+			return err
+		}
+		if state.grouped {
+			items = applyGrouping(items, state.collapsed)
+		}
+		list := tui.New(tui.Config{
+			Title:         "gint branch",
+			Columns:       branchColumns(),
+			Items:         items,
+			Operations:    buildBranchOperations(ctx, runner, f, state, true),
+			Density:       densityFromFlags(flags),
+			Sort:          state.sortLabel(),
+			InitialCursor: 1, // focus stays on the first real branch, past the create row
+		})
+		p := tea.NewProgram(list, tea.WithAltScreen(), tea.WithContext(ctx))
+		if _, err := p.Run(); err != nil {
+			return err
+		}
+		reentered, err := runBranchRebaseHandoff(cmd, runner, state, flags)
+		if err != nil {
+			return err
+		}
+		if !reentered {
+			return nil
+		}
+	}
 }
 
 func branchFiltersFromFlags(cmd *cobra.Command) (branchFilters, error) {
@@ -343,40 +359,76 @@ func branchFiltersFromFlags(cmd *cobra.Command) (branchFilters, error) {
 // → branch, .context/glossary.md → "Direct-menu mode").
 func runBranchDirectMenu(cmd *cobra.Command, r *git.Runner, name string, f branchFilters, state *branchViewState) error {
 	ctx := cmd.Context()
-	items, err := loadBranchItems(ctx, r, f, state.sort, false)
-	if err != nil {
-		return err
-	}
-	idx := -1
-	for i, it := range items {
-		if b, ok := it.(branchItem); ok && b.b.Name == name {
-			idx = i
-			break
+	flags := registeredFlags[cmd]
+	for {
+		items, err := loadBranchItems(ctx, r, f, state.sort, false)
+		if err != nil {
+			return err
+		}
+		idx := -1
+		for i, it := range items {
+			if b, ok := it.(branchItem); ok && b.b.Name == name {
+				idx = i
+				break
+			}
+		}
+		if idx == -1 {
+			return fmt.Errorf("branch: no such branch %q", name)
+		}
+
+		list := tui.New(tui.Config{
+			Title:           "gint branch " + name,
+			Columns:         branchColumns(),
+			Items:           items,
+			Operations:      buildBranchOperations(ctx, r, f, state, false),
+			InitialCursor:   idx,
+			OpenMenuOnStart: true,
+		})
+		p := tea.NewProgram(list, tea.WithAltScreen(), tea.WithContext(ctx))
+		if _, err := p.Run(); err != nil {
+			return err
+		}
+		reentered, err := runBranchRebaseHandoff(cmd, r, state, flags)
+		if err != nil {
+			return err
+		}
+		if !reentered {
+			return nil
 		}
 	}
-	if idx == -1 {
-		return fmt.Errorf("branch: no such branch %q", name)
-	}
+}
 
-	list := tui.New(tui.Config{
-		Title:           "gint branch " + name,
-		Columns:         branchColumns(),
-		Items:           items,
-		Operations:      buildBranchOperations(ctx, r, f, state, false),
-		InitialCursor:   idx,
-		OpenMenuOnStart: true,
-	})
-	p := tea.NewProgram(list, tea.WithAltScreen(), tea.WithContext(ctx))
-	_, err = p.Run()
-	return err
+// runBranchRebaseHandoff runs the rebase flow when the branch view quit for
+// the "rebase onto this branch" operation. It reports (false, nil) when no
+// rebase is pending (normal exit). On a pending rebase it either resumes an
+// in-progress rebase via the conflict resolver or starts the interactive plan
+// view via runRebaseInteractive. Returns (true, nil) after the flow so the
+// caller re-enters the refreshed branch list.
+func runBranchRebaseHandoff(cmd *cobra.Command, r *git.Runner, state *branchViewState, flags *commonFlags) (reenter bool, err error) {
+	if state.rebaseBase == "" {
+		return false, nil
+	}
+	base := state.rebaseBase
+	state.rebaseBase = ""
+	ctx := cmd.Context()
+
+	if st, err := git.DetectInProgress(ctx, r); err == nil && st != nil && st.Op == git.OpRebase {
+		return true, runConflictResolver(cmd, r, st)
+	}
+	cur, err := git.CurrentBranch(ctx, r)
+	if err != nil || cur == "" {
+		cur = "HEAD"
+	}
+	return true, runRebaseInteractive(cmd, r, cur, base, flags)
 }
 
 // branchViewState holds the mutable runtime state shared between the ops
 // closure and the refresh function inside buildBranchOperations.
 type branchViewState struct {
-	sort      string
-	grouped   bool
-	collapsed map[string]bool
+	sort       string
+	grouped    bool
+	collapsed  map[string]bool
+	rebaseBase string // set by the rebase op to hand off to runRebaseInteractive; reset after handoff
 }
 
 func (s *branchViewState) sortLabel() string {
@@ -555,6 +607,24 @@ func buildBranchOperations(ctx context.Context, r *git.Runner, f branchFilters, 
 					names[i] = b.b.Name
 				}
 				return refreshWith("merged " + strings.Join(names, ", "))
+			},
+		},
+		{
+			Name: "rebase onto this branch", Key: "B", Scope: tui.ScopeItem,
+			Run: func(c tui.OpContext) tea.Cmd {
+				b, ok := targetBranch(c.Items)
+				if !ok {
+					return tui.Status("select a branch first")
+				}
+				cur, err := git.CurrentBranch(ctx, r)
+				if err != nil {
+					return tui.Status(err.Error())
+				}
+				if b.b.Name == cur {
+					return tui.Status("already on " + cur + " — nothing to rebase onto")
+				}
+				state.rebaseBase = b.b.Name
+				return tea.Quit
 			},
 		},
 		{
