@@ -23,28 +23,13 @@ type logItem struct {
 }
 
 func (i logItem) Columns() []string {
-	author := i.c.AuthorName
-	date := i.c.RelDate
 	if i.full {
-		date = i.c.AbsDate
-	} else {
-		author = authorInitial(i.c.AuthorName)
+		return []string{i.c.ShortSHA, i.c.Subject, i.c.AbsDate, i.c.AuthorName, strings.Join(i.c.Refs, ", "), i.wtDir}
 	}
-	return []string{i.c.ShortSHA, i.c.Subject, date, author, strings.Join(i.c.Refs, ", "), i.wtDir}
+	return []string{i.c.ShortSHA, i.c.Subject, tui.FormatDate(i.c.CommitUnix, i.c.RelDate), tui.FormatAuthor(i.c.AuthorName), strings.Join(i.c.Refs, ", "), i.wtDir}
 }
 func (i logItem) FilterValue() string { return i.c.Subject + " " + strings.Join(i.c.Refs, " ") }
 func (i logItem) Current() bool       { return i.isHead }
-
-// authorInitial renders "Test User" as "Test U." (PROMPT.md → log: "author
-// (first name + last-name initial)"); a single-word name passes through.
-func authorInitial(name string) string {
-	fields := strings.Fields(name)
-	if len(fields) < 2 {
-		return name
-	}
-	last := fields[len(fields)-1]
-	return strings.Join(fields[:len(fields)-1], " ") + " " + string([]rune(last)[:1]) + "."
-}
 
 func logColumns(full bool) []tui.Column {
 	msgMax := 60
@@ -54,7 +39,7 @@ func logColumns(full bool) []tui.Column {
 	return []tui.Column{
 		{Title: "sha", MinWidth: 7, Density: tui.DensityShort, Color: tui.ColorSHA},
 		{Title: "message", MinWidth: 12, MaxWidth: msgMax, Flex: true, Density: tui.DensityShort},
-		{Title: "date", MinWidth: 10, Density: tui.DensityNormal, Color: tui.ColorDate},
+		{Title: "date", MinWidth: 7, Density: tui.DensityNormal, Color: tui.ColorDate},
 		{Title: "author", MinWidth: 8, Density: tui.DensityNormal, Color: tui.ColorAuthor},
 		{Title: "branches", MinWidth: 8, Density: tui.DensityNormal, Color: tui.ColorRef},
 		{Title: "worktree", MinWidth: 8, Density: tui.DensityFull, Color: tui.ColorDate},

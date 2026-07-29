@@ -22,7 +22,9 @@ type tagItem struct {
 	t git.Tag
 }
 
-func (i tagItem) Columns() []string   { return []string{i.t.Name, i.t.Subject, i.t.Date, i.t.Author} }
+func (i tagItem) Columns() []string {
+	return []string{i.t.Name, i.t.Subject, tui.FormatDate(i.t.DateUnix, i.t.Date), tui.FormatAuthor(i.t.Author)}
+}
 func (i tagItem) FilterValue() string { return i.t.Name }
 func (i tagItem) Current() bool       { return i.t.Head }
 
@@ -38,9 +40,9 @@ func (createTagItem) DefaultOp() string   { return "new" }
 
 func tagColumns() []tui.Column {
 	return []tui.Column{
-		{Title: "tag", MinWidth: 8, Flex: true, Density: tui.DensityShort},
-		{Title: "message", MaxWidth: 50, Density: tui.DensityNormal},
-		{Title: "date", MinWidth: 10, Density: tui.DensityNormal, Color: tui.ColorDate},
+		{Title: "tag", MinWidth: 8, Flex: true, Density: tui.DensityShort, Color: tui.ColorName},
+		{Title: "message", MaxWidth: 50, Flex: true, Density: tui.DensityNormal},
+		{Title: "date", MinWidth: 7, Density: tui.DensityNormal, Color: tui.ColorDate},
 		{Title: "author", MinWidth: 10, Density: tui.DensityFull, Color: tui.ColorAuthor},
 	}
 }

@@ -15,7 +15,7 @@ import (
 type stashItem struct{ s git.Stash }
 
 func (i stashItem) Columns() []string {
-	return []string{i.s.Ref, i.s.Message, i.s.Branch, i.s.RelDate}
+	return []string{i.s.Ref, i.s.Message, tui.FormatBranch(i.s.Branch), tui.FormatDate(i.s.Unix, i.s.RelDate)}
 }
 func (i stashItem) FilterValue() string { return i.s.Message + " " + i.s.Branch }
 func (i stashItem) Current() bool       { return false }
@@ -24,8 +24,8 @@ func stashColumns() []tui.Column {
 	return []tui.Column{
 		{Title: "index", MinWidth: 8, Density: tui.DensityShort, Color: tui.ColorSHA},
 		{Title: "message", MinWidth: 12, Flex: true, Density: tui.DensityShort},
-		{Title: "branch", MinWidth: 8, Density: tui.DensityNormal},
-		{Title: "date", MinWidth: 10, Density: tui.DensityNormal, Color: tui.ColorDate},
+		{Title: "branch", MinWidth: 8, Density: tui.DensityNormal, Color: tui.ColorName},
+		{Title: "date", MinWidth: 7, Density: tui.DensityNormal, Color: tui.ColorDate},
 	}
 }
 

@@ -3,6 +3,7 @@ package git
 import (
 	"context"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -13,9 +14,10 @@ type Stash struct {
 	Branch  string
 	Message string
 	RelDate string
+	Unix    int64 // committerdate:unix, for short/iso date formatting
 }
 
-const stashFormat = "%gd\x1f%gs\x1f%cr"
+const stashFormat = "%gd\x1f%gs\x1f%cr\x1f%ct"
 
 var stashSubjectRe = regexp.MustCompile(`^(?:WIP )?[Oo]n ([^:]+): (.*)$`)
 
@@ -39,19 +41,21 @@ func parseStashes(out string) []Stash {
 			continue
 		}
 		fields := strings.Split(line, "\x1f")
-		for len(fields) < 3 {
+		for len(fields) < 4 {
 			fields = append(fields, "")
 		}
 		branch, message := "", fields[1]
 		if m := stashSubjectRe.FindStringSubmatch(fields[1]); m != nil {
 			branch, message = m[1], m[2]
 		}
+		unix, _ := strconv.ParseInt(fields[3], 10, 64)
 		stashes = append(stashes, Stash{
 			Index:   i,
 			Ref:     fields[0],
 			Branch:  branch,
 			Message: message,
 			RelDate: fields[2],
+			Unix:    unix,
 		})
 	}
 	return stashes

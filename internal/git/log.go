@@ -2,6 +2,7 @@ package git
 
 import (
 	"context"
+	"strconv"
 	"strings"
 )
 
@@ -12,11 +13,12 @@ type Commit struct {
 	Subject    string
 	RelDate    string
 	AbsDate    string // ISO 8601 committer date, for -F/--full
+	CommitUnix int64  // committerdate:unix, for short/iso date formatting
 	AuthorName string
 	Refs       []string // local branch names pointing at this commit
 }
 
-const logFormat = "%H\x1f%h\x1f%s\x1f%cr\x1f%an\x1f%D\x1f%cI"
+const logFormat = "%H\x1f%h\x1f%s\x1f%cr\x1f%an\x1f%D\x1f%cI\x1f%ct"
 
 // ListCommits returns the commit history reachable from HEAD, most recent first.
 func ListCommits(ctx context.Context, r *Runner) ([]Commit, error) {
@@ -49,9 +51,10 @@ func parseCommits(out string) []Commit {
 			continue
 		}
 		fields := strings.Split(line, "\x1f")
-		for len(fields) < 7 {
+		for len(fields) < 8 {
 			fields = append(fields, "")
 		}
+		commitUnix, _ := strconv.ParseInt(fields[7], 10, 64)
 		commits = append(commits, Commit{
 			SHA:        fields[0],
 			ShortSHA:   fields[1],
@@ -60,6 +63,7 @@ func parseCommits(out string) []Commit {
 			AuthorName: fields[4],
 			Refs:       parseRefs(fields[5]),
 			AbsDate:    fields[6],
+			CommitUnix: commitUnix,
 		})
 	}
 	return commits

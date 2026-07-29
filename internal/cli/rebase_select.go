@@ -43,8 +43,10 @@ func (i rebaseSelectItem) Columns() []string {
 	name := i.b.Name
 	if i.role != "" {
 		name = "(" + i.role + ") " + name
+	} else {
+		name = tui.FormatBranch(name)
 	}
-	return []string{name, i.b.Subject, i.b.CommitDate, i.b.AuthorName}
+	return []string{name, i.b.Subject, tui.FormatDate(i.b.CommitUnix, i.b.CommitDate), tui.FormatAuthor(i.b.AuthorName)}
 }
 func (i rebaseSelectItem) FilterValue() string { return i.b.Name }
 func (i rebaseSelectItem) Current() bool       { return i.b.Head }

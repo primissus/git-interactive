@@ -191,14 +191,26 @@ The settings file is plain JSON:
 ```json
 {
   "appearance": "system",
-  "theme": "gruvbox"
+  "theme": "gruvbox",
+  "dateFormat": "short",
+  "branchFormat": "full",
+  "authorFormat": "short"
 }
 ```
 
-Valid values: `appearance` ∈ `{system, light, dark}` (empty = `system`);
-`theme` ∈ `ThemeNames()` (empty or unknown = `default`). A missing or malformed
-file is not fatal — `gint` warns and falls back to defaults, exactly like
-`keymap.json`.
+Valid values:
+
+| Field | Values | Default | Description |
+|---|---|---|---|
+| `appearance` | `system`, `light`, `dark` | `system` | OS dark-mode preference detection at startup |
+| `theme` | `ThemeNames()` | `default` | One of the 7 registered themes |
+| `dateFormat` | `short`, `long`, `iso` | `short` | `short` = compact relative ("10 min"); `long` = git-style ("3 days ago"); `iso` = absolute ("2006-01-02 15:04") |
+| `branchFormat` | `full`, `short` | `full` | `short` = `d/d/name` (all segments except leaf → first rune) |
+| `authorFormat` | `short`, `initials`, `full` | `short` | `short` = "Name L."; `initials` = "NL"; `full` = "Name Last" |
+
+A missing or malformed file is not fatal — `gint` warns and falls back to
+defaults, exactly like `keymap.json`. The `:settings` overlay exposes all five
+fields with live preview (←/→ toggle, Enter select, `s` save, Esc revert).
 
 ### Keymap overrides
 

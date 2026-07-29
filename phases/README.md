@@ -16,3 +16,4 @@ Phased plan to build `gint` per [PROMPT.md](../PROMPT.md). Each phase has a `PLA
 | [p10](p10/PLAN.md) | `rebase` target/base args, branch selector, `:` palette, in-progress status |
 | [p11](p11/PLAN.md) | `branch` ergonomics: copy name, tree grouping, runtime sort, `:` palette, rename pre-fill |
 | [p12](p12/PLAN.md) | `branch` rebase operation: interactive rebase from branch list |
+| [p13](p13/PLAN.md) | Display improvements: per-column colors, deficit-weighted widths, configurable date/branch/author formats |

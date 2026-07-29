@@ -151,3 +151,25 @@
   - Adding `S` as a shortcut for settings — collides with the existing `branch` sort-cycle binding; `:settings` via the palette is enough.
   - Two separate "gruvbox light" / "gruvbox dark" theme entries — user confirmed a single `gruvbox` theme with Light = light soft and Dark = medium dark matches the requested `depending on selected appearance` semantics.
 - **Status:** current
+
+## 2026-07 · Display improvements: per-column colors, deficit-weighted widths, configurable formats (p13)
+
+### Per-column colors
+- **Decision:** every primary-identifier column (branch name, tag name, worktree path, worktree branch, stash branch) gets `tui.ColorName` tint. Sha/date/author/refs already have their tints. Message and status-code columns stay default-foreground — they're the reading content, and coloring everything hurts scannability.
+- **Why:** the existing `Column.Color` infra (added in p8) was only applied to sha/date/author/refs. Filling the gaps makes tables more readable without adding new infrastructure.
+- **Rejected:** coloring message columns (distracting); adding new color slots (the 5 existing tints are enough to distinguish all column types).
+
+### Deficit-weighted column widths
+- **Decision:** `List.layout()` computes natural (uncapped) widths alongside capped ones. Leftover terminal width grows flex columns that are *truncated* (width < natural) first, one cell at a time round-robin, up to their natural width; remaining slack is split evenly among all flex columns (existing fallback).
+- **Why:** with the old even-split algorithm, short branch names → all leftover padding goes to the branch (flex) column while the message column stays stuck at MaxWidth. Users want message columns to absorb available space when branch names are short. Making message columns `Flex: true` + deficit weighting achieves this naturally.
+- **Rejected:** capping flex growth at MaxWidth (defeats the purpose); making non-flex columns growable (would break the contract that MaxWidth is a hard cap); a more complex proportional-deficit formula (round-robin is simple and fast — ≤400 iterations per frame).
+
+### Short date format buckets
+- **Decision:** `ShortDate(unix, now)` uses these boundaries: `<60s`→`now`, `<60m`→`N min`, `<24h`→`N hr`, `<30d`→`N day`, `<365d`→`N mth`, else `N yr`. Singular abbreviations throughout.
+- **Why:** compact enough for a 6–7 cell column, unambiguous, fixed-width keeps the table from jittering.
+- **Rejected:** following git's own relative format (too verbose); showing only the largest unit (correct but "now" for a 5-hour-old commit is misleading).
+
+### Settings format: `-F` flag override
+- **Decision:** The `-F/--full` flag in log/graph still shows absolute ISO date + full author name, regardless of active format settings. Settings only affect the *default* display.
+- **Why:** `-F` is an explicit per-run override whose existing behavior is well-documented. Silently changing it would be surprising.
+- **Rejected:** making `-F` respect settings (breaking change); removing `-F` (useful one-shot toggle).

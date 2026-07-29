@@ -426,9 +426,9 @@ func TestSettingsAppliesThemeAndSaves(t *testing.T) {
 	sendKeys(tm, keyType(tea.KeyEnter))
 	waitForText(t, tm, "Settings")
 
-	// Move to first theme row (cursor 0 = appearance; one `j` lands on row 1
-	// = "default", another lands on row 2 = "gruvbox"). Pick gruvbox.
-	sendKeys(tm, keyRunes('j'), keyRunes('j'))
+	// Move to gruvbox theme row. With the added format rows the layout is:
+	// cursor 0=appearance, 1=date, 2=branch, 3=author, 4=default(theme), 5=gruvbox.
+	sendKeys(tm, keyRunes('j'), keyRunes('j'), keyRunes('j'), keyRunes('j'), keyRunes('j'))
 	sendKeys(tm, keyType(tea.KeyEnter)) // preview-select gruvbox
 	// The gruvbox row should now be the active ▸ row in the visible output.
 	waitForText(t, tm, "gruvbox")

@@ -1,8 +1,12 @@
 package cli
 
-import "testing"
+import (
+	"testing"
 
-func TestAuthorInitial(t *testing.T) {
+	"git-interact/internal/tui"
+)
+
+func TestShortAuthor(t *testing.T) {
 	cases := map[string]string{
 		"Test User":        "Test U.",
 		"Ada Lovelace":     "Ada L.",
@@ -10,8 +14,8 @@ func TestAuthorInitial(t *testing.T) {
 		"Mary Jane Watson": "Mary Jane W.",
 	}
 	for in, want := range cases {
-		if got := authorInitial(in); got != want {
-			t.Errorf("authorInitial(%q) = %q, want %q", in, got, want)
+		if got := tui.ShortAuthor(in); got != want {
+			t.Errorf("ShortAuthor(%q) = %q, want %q", in, got, want)
 		}
 	}
 }

@@ -33,8 +33,10 @@ func (i branchItem) Columns() []string {
 	name := i.b.Name
 	if i.displayName != "" {
 		name = i.displayName
+	} else {
+		name = tui.FormatBranch(name)
 	}
-	return []string{name, i.b.Subject, i.b.CommitDate, i.b.AuthorName}
+	return []string{name, i.b.Subject, tui.FormatDate(i.b.CommitUnix, i.b.CommitDate), tui.FormatAuthor(i.b.AuthorName)}
 }
 func (i branchItem) FilterValue() string { return i.b.Name }
 func (i branchItem) Current() bool       { return i.b.Head }
@@ -54,9 +56,9 @@ func (createBranchItem) DefaultOp() string   { return "new" }
 
 func branchColumns() []tui.Column {
 	return []tui.Column{
-		{Title: "branch", MinWidth: 12, Flex: true, Density: tui.DensityShort},
-		{Title: "last commit", MaxWidth: 50, Density: tui.DensityNormal},
-		{Title: "date", MinWidth: 10, Density: tui.DensityNormal, Color: tui.ColorDate},
+		{Title: "branch", MinWidth: 12, Flex: true, Density: tui.DensityShort, Color: tui.ColorName},
+		{Title: "last commit", MaxWidth: 50, Flex: true, Density: tui.DensityNormal},
+		{Title: "date", MinWidth: 7, Density: tui.DensityNormal, Color: tui.ColorDate},
 		{Title: "author", MinWidth: 10, Density: tui.DensityFull, Color: tui.ColorAuthor},
 	}
 }

@@ -44,9 +44,13 @@ func (l *List) titleLine() string {
 
 // layout resolves a display width for each visible column: the max of the
 // title, MinWidth, and widest cell (capped by MaxWidth), with flex columns
-// absorbing any leftover terminal width.
+// absorbing any leftover terminal width. Flex columns that are truncated
+// (natural width > allocated) grow first, proportionally to their deficit,
+// up to their full natural width; any remaining slack is split evenly among
+// all flex columns.
 func (l *List) layout() []int {
 	cols := l.visibleColumns()
+	natural := make([]int, len(cols))
 	widths := make([]int, len(cols))
 	flex := []int{}
 
@@ -61,6 +65,7 @@ func (l *List) layout() []int {
 				w = cw
 			}
 		}
+		natural[i] = w
 		if c.MaxWidth > 0 && w > c.MaxWidth {
 			w = c.MaxWidth
 		}
@@ -75,10 +80,54 @@ func (l *List) layout() []int {
 		for _, w := range widths {
 			used += w
 		}
-		if leftover := l.width - used; leftover > 0 {
-			share := leftover / len(flex)
-			for _, i := range flex {
-				widths[i] += share
+		leftover := l.width - used
+		if leftover > 0 {
+			// First pass: feed truncated flex columns (width < natural).
+			// Give one cell at a time round-robin until they reach natural
+			// or leftover is exhausted.
+			truncated := make([]int, 0, len(flex))
+			for _, fi := range flex {
+				if widths[fi] < natural[fi] {
+					truncated = append(truncated, fi)
+				}
+			}
+			for leftover > 0 && len(truncated) > 0 {
+				gave := 0
+				for _, fi := range truncated {
+					if widths[fi] < natural[fi] {
+						widths[fi]++
+						leftover--
+						gave++
+					}
+					if leftover == 0 {
+						break
+					}
+				}
+				// Re-filter: remove columns now at natural
+				if gave > 0 {
+					next := truncated[:0]
+					for _, fi := range truncated {
+						if widths[fi] < natural[fi] {
+							next = append(next, fi)
+						}
+					}
+					truncated = next
+				} else {
+					break // no column is still below natural
+				}
+			}
+
+			// Second pass: any remaining leftover split evenly among flex.
+			if leftover > 0 {
+				share := leftover / len(flex)
+				for _, fi := range flex {
+					widths[fi] += share
+				}
+				leftover -= share * len(flex)
+				// Distribute any remainder one cell at a time.
+				for i := 0; i < leftover; i++ {
+					widths[flex[i%len(flex)]]++
+				}
 			}
 		}
 	}

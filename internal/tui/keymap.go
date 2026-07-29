@@ -41,12 +41,15 @@ type Chrome struct {
 
 	// Settings overlay (`:settings` / `:menu`) hints. Defaults are populated by
 	// defaultChrome; every field is overridable via keymap.json like the others.
-	SettingsTitle      string
-	SettingsAppearance string
-	SettingsTheme      string
-	SettingsFooter     string
-	SettingsSaved      string // has one %s verb (theme name)
-	SettingsSaveFailed string // has one %s verb (error)
+	SettingsTitle        string
+	SettingsAppearance   string
+	SettingsDateFormat   string
+	SettingsBranchFormat string
+	SettingsAuthorFormat string
+	SettingsTheme        string
+	SettingsFooter       string
+	SettingsSaved        string // has one %s verb (theme name)
+	SettingsSaveFailed   string // has one %s verb (error)
 
 	Nav [][2]string
 }
@@ -82,12 +85,15 @@ func defaultChrome() Chrome {
 		BatchSummary:        "%s %d",
 		BatchFailSuffix:     " · failed %d (%s)",
 
-		SettingsTitle:      "Settings",
-		SettingsAppearance: "Appearance",
-		SettingsTheme:      "Theme",
-		SettingsFooter:     "↑/↓ select · ←/→ toggle (on appearance) · enter select · s save · esc cancel",
-		SettingsSaved:      "theme saved: %s",
-		SettingsSaveFailed: "save failed: %s",
+		SettingsTitle:        "Settings",
+		SettingsAppearance:   "Appearance",
+		SettingsDateFormat:   "Date",
+		SettingsBranchFormat: "Branch",
+		SettingsAuthorFormat: "Author",
+		SettingsTheme:        "Theme",
+		SettingsFooter:       "↑/↓ select · ←/→ toggle · enter select · s save · esc cancel",
+		SettingsSaved:        "theme saved: %s",
+		SettingsSaveFailed:   "save failed: %s",
 
 		Nav: [][2]string{
 			{"j / k", "move down / up"},
@@ -148,12 +154,15 @@ type chromeOverride struct {
 	BatchSummary        *string `json:"batch_summary"`
 	BatchFailSuffix     *string `json:"batch_fail_suffix"`
 
-	SettingsTitle      *string `json:"settings_title"`
-	SettingsAppearance *string `json:"settings_appearance"`
-	SettingsTheme      *string `json:"settings_theme"`
-	SettingsFooter     *string `json:"settings_footer"`
-	SettingsSaved      *string `json:"settings_saved"`
-	SettingsSaveFailed *string `json:"settings_save_failed"`
+	SettingsTitle        *string `json:"settings_title"`
+	SettingsAppearance   *string `json:"settings_appearance"`
+	SettingsDateFormat   *string `json:"settings_date_format"`
+	SettingsBranchFormat *string `json:"settings_branch_format"`
+	SettingsAuthorFormat *string `json:"settings_author_format"`
+	SettingsTheme        *string `json:"settings_theme"`
+	SettingsFooter       *string `json:"settings_footer"`
+	SettingsSaved        *string `json:"settings_saved"`
+	SettingsSaveFailed   *string `json:"settings_save_failed"`
 
 	Nav *[][2]string `json:"nav"`
 }
@@ -245,6 +254,9 @@ func applyChromeOverride(c *Chrome, ov *chromeOverride) {
 	set(&c.BatchFailSuffix, ov.BatchFailSuffix)
 	set(&c.SettingsTitle, ov.SettingsTitle)
 	set(&c.SettingsAppearance, ov.SettingsAppearance)
+	set(&c.SettingsDateFormat, ov.SettingsDateFormat)
+	set(&c.SettingsBranchFormat, ov.SettingsBranchFormat)
+	set(&c.SettingsAuthorFormat, ov.SettingsAuthorFormat)
 	set(&c.SettingsTheme, ov.SettingsTheme)
 	set(&c.SettingsFooter, ov.SettingsFooter)
 	set(&c.SettingsSaved, ov.SettingsSaved)

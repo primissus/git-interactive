@@ -20,14 +20,20 @@ const (
 // shown on the appearance row. "system" leads because it's the no-config default.
 var appearances = []string{"system", "light", "dark"}
 
-// settingsModel is the `:settings` overlay: an Appearance toggle (System/Light/
-// Dark) plus a scrollable theme list with live color swatches. Changes preview
-// live — every cursor move or toggle fires setPalette + refreshes the owning
-// List's *Styles, so the list behind the overlay repaints immediately. Esc
-// reverts to the pre-overlay palette; s saves to disk and applies.
-//
-// It's a sibling of menuModel/confirmModel: the owning List routes messages to
-// Update, reads state, and either reverts or commits.
+// dateFormats, branchFormats, authorFormats are the cycle orders for the
+// display-format toggle rows.
+var dateFormats = []string{"short", "long", "iso"}
+
+var branchFormats = []string{"full", "short"}
+
+var authorFormats = []string{"short", "initials", "full"}
+
+// settingsModel is the `:settings` overlay: an Appearance toggle
+// (System/Light/Dark), Date/Branch/Author format toggle rows, plus a
+// scrollable theme list with live color swatches. Changes preview live — every
+// cursor move or toggle fires setPalette + refreshes the owning List's *Styles,
+// so the list behind the overlay repaints immediately. Esc reverts to the
+// pre-overlay state; s saves to disk and applies.
 type settingsModel struct {
 	styles *Styles // ref to the owning List's styles — regenerated on preview
 
@@ -36,15 +42,21 @@ type settingsModel struct {
 	origAppearance string // snapshot for revert on esc
 	origTheme      string // snapshot for revert on esc
 
-	cursor int // 0 = appearance row, 1..len(themes) = theme rows
+	dateFormat       string // current preview date format
+	branchFormat     string // current preview branch format
+	authorFormat     string // current preview author format
+	origDateFormat   string // snapshot for revert on esc
+	origBranchFormat string
+	origAuthorFormat string
+
+	cursor int // 0 = appearance, 1 = date, 2 = branch, 3 = author, 4+ = themes
 	state  settingsState
 
 	saveErr error // surfaced via saveFailedMsg if SaveSettings failed
 }
 
-// newSettingsModel builds the overlay, snapshotting the current active palette
-// so Esc can restore it bit-for-bit. Live preview starts from the current
-// selection (no change until the user moves/toggles).
+// newSettingsModel builds the overlay, snapshotting the current active state
+// so Esc can restore it bit-for-bit.
 func newSettingsModel(styles *Styles) settingsModel {
 	s := settingsModel{
 		styles:         styles,
@@ -52,6 +64,13 @@ func newSettingsModel(styles *Styles) settingsModel {
 		activeTheme:    ActiveTheme.Name,
 		origAppearance: ActiveAppearance,
 		origTheme:      ActiveTheme.Name,
+
+		dateFormat:       activeDateFormat,
+		branchFormat:     activeBranchFormat,
+		authorFormat:     activeAuthorFormat,
+		origDateFormat:   activeDateFormat,
+		origBranchFormat: activeBranchFormat,
+		origAuthorFormat: activeAuthorFormat,
 	}
 	if s.appearance == "" {
 		s.appearance = "system"
@@ -61,13 +80,14 @@ func newSettingsModel(styles *Styles) settingsModel {
 		s.activeTheme = "default"
 		s.origTheme = "default"
 	}
-	// Cursor lands on the appearance row so left/right is immediately useful.
 	s.cursor = 0
 	return s
 }
 
-// Update advances the overlay. Returns nil (no commands) — settings has no
-// blinking cursor. The owning List reads state after each call.
+// lastCursor returns the maximum valid cursor index.
+func (m *settingsModel) lastCursor() int { return 3 + len(themes) }
+
+// Update advances the overlay. Returns nil (no commands).
 func (m *settingsModel) Update(msg tea.Msg) tea.Cmd {
 	key, ok := msg.(tea.KeyMsg)
 	if !ok {
@@ -84,43 +104,37 @@ func (m *settingsModel) Update(msg tea.Msg) tea.Cmd {
 		}
 		return nil
 	case "down", "j":
-		if m.cursor < len(themes) {
+		if m.cursor < m.lastCursor() {
 			m.cursor++
 		}
 		return nil
 	case "left", "h":
-		if m.cursor == 0 {
-			m.cycleAppearance(-1)
-			m.preview()
-		}
+		m.cycleCurrent(-1)
 		return nil
 	case "right", "l":
-		if m.cursor == 0 {
-			m.cycleAppearance(1)
-			m.preview()
-		}
+		m.cycleCurrent(1)
 		return nil
 	case "enter":
 		if m.cursor == 0 {
-			// On appearance row, enter cycles too — same as ←/→ for discoverability.
-			m.cycleAppearance(1)
-			m.preview()
-		} else {
-			// On a theme row, enter selects it as the active preview theme.
-			themeIdx := m.cursor - 1
+			m.cycleCurrent(1)
+		} else if m.cursor >= 4 {
+			themeIdx := m.cursor - 4
 			if themeIdx >= 0 && themeIdx < len(themes) {
 				m.activeTheme = themes[themeIdx].Name
 				m.preview()
 			}
+		} else {
+			// date/branch/author: enter also cycles
+			m.cycleCurrent(1)
 		}
 		return nil
 	case "s":
-		// Save + apply + close. Failure surfaces via saveErr; the caller
-		// shows it as a Status line but still closes the overlay (the live
-		// preview is already in effect, just not persisted).
 		m.saveErr = SaveSettings(&Settings{
-			Appearance: m.appearance,
-			Theme:      m.activeTheme,
+			Appearance:   m.appearance,
+			Theme:        m.activeTheme,
+			DateFormat:   m.dateFormat,
+			BranchFormat: m.branchFormat,
+			AuthorFormat: m.authorFormat,
 		})
 		m.state = settingsApplied
 		return nil
@@ -128,43 +142,69 @@ func (m *settingsModel) Update(msg tea.Msg) tea.Cmd {
 	return nil
 }
 
-// cycleAppearance advances the preview appearance by dir (±1) modulo the
-// appearances cycle.
-func (m *settingsModel) cycleAppearance(dir int) {
+// cycleCurrent advances the value at the current cursor row by dir (±1).
+func (m *settingsModel) cycleCurrent(dir int) {
+	var changed bool
+	switch m.cursor {
+	case 0:
+		changed = m.cycleOption(&m.appearance, appearances, dir)
+	case 1:
+		changed = m.cycleOption(&m.dateFormat, dateFormats, dir)
+	case 2:
+		changed = m.cycleOption(&m.branchFormat, branchFormats, dir)
+	case 3:
+		changed = m.cycleOption(&m.authorFormat, authorFormats, dir)
+	}
+	if changed {
+		m.preview()
+	}
+}
+
+// cycleOption cycles *value through options by dir, returning true if changed.
+func (m *settingsModel) cycleOption(value *string, options []string, dir int) bool {
 	idx := -1
-	for i, a := range appearances {
-		if a == m.appearance {
+	for i, o := range options {
+		if o == *value {
 			idx = i
 			break
 		}
 	}
 	if idx < 0 {
-		idx = 0 // unknown → start at "system"
+		idx = 0
 	}
-	n := len(appearances)
-	m.appearance = appearances[(idx+dir+n)%n]
+	n := len(options)
+	old := *value
+	*value = options[(idx+dir+n)%n]
+	return *value != old
 }
 
-// preview refreshes the global palette + the owning List's Styles so the list
-// behind the overlay repaints with the new colors. Called on every appearance
-// toggle or theme selection.
+// preview refreshes the global palette + format vars + the owning List's Styles
+// so the list behind the overlay repaints instantly.
 func (m *settingsModel) preview() {
 	setPalette(m.activeTheme, m.appearance)
+	activeDateFormat = m.dateFormat
+	activeBranchFormat = m.branchFormat
+	activeAuthorFormat = m.authorFormat
 	if m.styles != nil {
 		*m.styles = StylesFromColors()
 	}
 }
 
-// revert restores the snapshot palette taken at construction. Called on Esc.
+// revert restores the snapshot state taken at construction. Called on Esc.
 func (m *settingsModel) revert() {
 	setPalette(m.origTheme, m.origAppearance)
+	activeDateFormat = m.origDateFormat
+	activeBranchFormat = m.origBranchFormat
+	activeAuthorFormat = m.origAuthorFormat
 	if m.styles != nil {
 		*m.styles = StylesFromColors()
 	}
 }
 
-// View renders the settings overlay. It reads from m.styles so the preview uses
-// whatever palette was last setPalette()'d, not the snapshot.
+// settingsNumRows is the number of non-theme rows in the settings view.
+const settingsNumRows = 4
+
+// View renders the settings overlay.
 func (m settingsModel) View() string {
 	chrome := chromeSettings()
 	var b strings.Builder
@@ -180,12 +220,29 @@ func (m settingsModel) View() string {
 		b.WriteString(m.styles.SettingsHelp.Render("  (resolved: " + resolved + ")"))
 	}
 	b.WriteByte('\n')
+	m.renderToggleRow(&b, m.cursor == 0, m.renderAppearanceRow, m.renderAppearanceRowDim)
+	b.WriteByte('\n')
+	b.WriteByte('\n')
 
-	if m.cursor == 0 {
-		b.WriteString(m.renderAppearanceRow())
-	} else {
-		b.WriteString(m.renderAppearanceRowDim())
-	}
+	// Date format row.
+	b.WriteString(m.styles.SettingsSection.Render(chrome.DateFormat))
+	b.WriteByte('\n')
+	m.renderToggleRow(&b, m.cursor == 1, func() string { return m.renderOptions(dateFormats, m.dateFormat) },
+		func() string { return m.renderOptionsDim(dateFormats, m.dateFormat) })
+	b.WriteByte('\n')
+
+	// Branch format row.
+	b.WriteString(m.styles.SettingsSection.Render(chrome.BranchFormat))
+	b.WriteByte('\n')
+	m.renderToggleRow(&b, m.cursor == 2, func() string { return m.renderOptions(branchFormats, m.branchFormat) },
+		func() string { return m.renderOptionsDim(branchFormats, m.branchFormat) })
+	b.WriteByte('\n')
+
+	// Author format row.
+	b.WriteString(m.styles.SettingsSection.Render(chrome.AuthorFormat))
+	b.WriteByte('\n')
+	m.renderToggleRow(&b, m.cursor == 3, func() string { return m.renderOptions(authorFormats, m.authorFormat) },
+		func() string { return m.renderOptionsDim(authorFormats, m.authorFormat) })
 	b.WriteByte('\n')
 	b.WriteByte('\n')
 
@@ -194,7 +251,7 @@ func (m settingsModel) View() string {
 	b.WriteByte('\n')
 	for i, t := range themes {
 		row := t.Name
-		if i == m.cursor-1 {
+		if i == m.cursor-settingsNumRows {
 			b.WriteString(m.styles.SettingsRowActive.Render(m.formatThemeRow(row, true)))
 		} else {
 			b.WriteString(m.styles.SettingsRow.Render(m.formatThemeRow(row, false)))
@@ -207,9 +264,18 @@ func (m settingsModel) View() string {
 	return m.styles.Overlay.Render(b.String())
 }
 
+// renderToggleRow calls activeRender or dimRender depending on whether this
+// row is the cursor target.
+func (m settingsModel) renderToggleRow(b *strings.Builder, active bool, activeRender, dimRender func() string) {
+	if active {
+		b.WriteString(activeRender())
+	} else {
+		b.WriteString(dimRender())
+	}
+}
+
 // renderAppearanceRow shows [◉ System] [○ Light] [○ Dark] with the active
-// option highlighted (Cursor + colorCurrent), used when the appearance row
-// itself is the cursor target.
+// option highlighted.
 func (m settingsModel) renderAppearanceRow() string {
 	parts := make([]string, len(appearances))
 	for i, a := range appearances {
@@ -224,8 +290,7 @@ func (m settingsModel) renderAppearanceRow() string {
 	return lipgloss.JoinHorizontal(lipgloss.Top, parts...)
 }
 
-// renderAppearanceRowDim is the same row but de-emphasized — shown when the
-// cursor is on a theme row, so the appearance toggle reads as inactive.
+// renderAppearanceRowDim is the appearance row shown when cursor is elsewhere.
 func (m settingsModel) renderAppearanceRowDim() string {
 	parts := make([]string, len(appearances))
 	for i, a := range appearances {
@@ -238,10 +303,54 @@ func (m settingsModel) renderAppearanceRowDim() string {
 	return lipgloss.JoinHorizontal(lipgloss.Top, parts...)
 }
 
-// formatThemeRow builds one theme row: the cursor marker + name, padded, plus
-// a 3-swatch preview rendered in the theme's resolved-appearance colors.
+// renderOptions renders a generic toggle row: [◉ optA] [○ optB] [○ optC] with
+// the active option highlighted. Used by date, branch, author rows.
+func (m settingsModel) renderOptions(opts []string, current string) string {
+	parts := make([]string, len(opts))
+	for i, o := range opts {
+		marker := "○"
+		style := m.styles.SettingsOptionOff
+		if o == current {
+			marker = "◉"
+			style = m.styles.SettingsOptionOn
+		}
+		parts[i] = style.Render(marker + " " + labelForFormatOption(o))
+	}
+	return lipgloss.JoinHorizontal(lipgloss.Top, parts...)
+}
+
+// renderOptionsDim is the same row but all options de-emphasized.
+func (m settingsModel) renderOptionsDim(opts []string, current string) string {
+	parts := make([]string, len(opts))
+	for i, o := range opts {
+		marker := "○"
+		if o == current {
+			marker = "◉"
+		}
+		parts[i] = m.styles.SettingsOptionOff.Render(marker + " " + labelForFormatOption(o))
+	}
+	return lipgloss.JoinHorizontal(lipgloss.Top, parts...)
+}
+
+// labelForFormatOption returns a display label for a format option value.
+func labelForFormatOption(o string) string {
+	switch o {
+	case "short":
+		return "Short"
+	case "long":
+		return "Long"
+	case "iso":
+		return "ISO"
+	case "full":
+		return "Full"
+	case "initials":
+		return "Initials"
+	}
+	return o
+}
+
+// formatThemeRow builds one theme row: marker + name + swatches.
 func (m settingsModel) formatThemeRow(name string, active bool) string {
-	// Pad the name to align swatches across all rows.
 	nameW := 0
 	for _, th := range themes {
 		if len(th.Name) > nameW {
@@ -253,9 +362,6 @@ func (m settingsModel) formatThemeRow(name string, active bool) string {
 		marker = "▸ "
 	}
 	nameStr := marker + name + strings.Repeat(" ", nameW-len(name)+3)
-
-	// Swatch palette uses the *preview* appearance, so toggling appearance
-	// recolors every theme row's swatches instantly.
 	pal := PaletteFor(name, m.appearance)
 	swatch := func(c lipgloss.Color) string {
 		return m.styles.SettingsSwatch.Foreground(c).Render("■")
@@ -279,29 +385,30 @@ func labelForAppearance(a string) string {
 	return a
 }
 
-// chromeSettings returns the chrome hint strings for the settings overlay. Uses
-// the same Chrome override pattern as every other view — fields are added to
-// the activeKeymap.Chrome and overridable via keymap.json.
+// chromeSettings returns the chrome hint strings for the settings overlay.
 func chromeSettings() settingsChrome {
 	c := chrome()
 	return settingsChrome{
-		Title:      orStr(c.SettingsTitle, "Settings"),
-		Appearance: orStr(c.SettingsAppearance, "Appearance"),
-		Theme:      orStr(c.SettingsTheme, "Theme"),
+		Title:        orStr(c.SettingsTitle, "Settings"),
+		Appearance:   orStr(c.SettingsAppearance, "Appearance"),
+		DateFormat:   orStr(c.SettingsDateFormat, "Date"),
+		BranchFormat: orStr(c.SettingsBranchFormat, "Branch"),
+		AuthorFormat: orStr(c.SettingsAuthorFormat, "Author"),
+		Theme:        orStr(c.SettingsTheme, "Theme"),
 		Footer: orStr(c.SettingsFooter,
-			"↑/↓ select · ←/→ toggle (on appearance) · enter select · s save · esc cancel"),
+			"↑/↓ select · ←/→ toggle · enter select · s save · esc cancel"),
 	}
 }
 
-// settingsChrome is the hint-string set for the settings overlay. Each field
-// falls back to a default when the corresponding Chrome field is "" (which it
-// isn't by default — defaultChrome() now populates them — but older keymap.json
-// files won't have the new fields, so the fallback is defensive).
+// settingsChrome is the hint-string set for the settings overlay.
 type settingsChrome struct {
-	Title      string
-	Appearance string
-	Theme      string
-	Footer     string
+	Title        string
+	Appearance   string
+	DateFormat   string
+	BranchFormat string
+	AuthorFormat string
+	Theme        string
+	Footer       string
 }
 
 // orStr returns s when non-empty, else fallback.

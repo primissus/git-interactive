@@ -7,14 +7,20 @@ import (
 	"path/filepath"
 )
 
-// Settings is the on-disk shape of ~/.config/gint/settings.json. Both fields are
-// optional — empty/missing means "use the defaults" (System appearance, default
-// theme).
+// Settings is the on-disk shape of ~/.config/gint/settings.json. All fields
+// are optional — empty/missing means "use the defaults".
 type Settings struct {
 	// Appearance is one of "system", "light", "dark", or "" (→ system).
 	Appearance string `json:"appearance,omitempty"`
 	// Theme is a name from ThemeNames(); "" or unknown falls back to "default".
 	Theme string `json:"theme,omitempty"`
+
+	// DateFormat is one of "short", "long", "iso" or "" (→ "short").
+	DateFormat string `json:"dateFormat,omitempty"`
+	// BranchFormat is one of "full", "short" or "" (→ "full").
+	BranchFormat string `json:"branchFormat,omitempty"`
+	// AuthorFormat is one of "short", "initials", "full" or "" (→ "short").
+	AuthorFormat string `json:"authorFormat,omitempty"`
 }
 
 // settingsPath resolves ~/.config/gint/settings.json, honoring $XDG_CONFIG_HOME
@@ -77,6 +83,23 @@ func LoadSettings() (*Settings, error) {
 	if _, ok := ThemeByName(s.Theme); !ok {
 		s.Theme = "default"
 	}
+
+	switch s.DateFormat {
+	case "short", "long", "iso":
+	default:
+		s.DateFormat = "short"
+	}
+	switch s.BranchFormat {
+	case "full", "short":
+	default:
+		s.BranchFormat = "full"
+	}
+	switch s.AuthorFormat {
+	case "short", "initials", "full":
+	default:
+		s.AuthorFormat = "short"
+	}
+
 	return &s, nil
 }
 
@@ -117,9 +140,11 @@ func SaveSettings(s *Settings) error {
 func ApplySettings(s *Settings) {
 	if s == nil {
 		setPalette("default", "system")
+		freezeFormats(nil)
 		return
 	}
 	setPalette(s.Theme, s.Appearance)
+	freezeFormats(s)
 }
 
 // CurrentSettings snapshots the active theme + appearance so the settings
@@ -134,5 +159,11 @@ func CurrentSettings() *Settings {
 	if theme == "" {
 		theme = "default"
 	}
-	return &Settings{Appearance: appearance, Theme: theme}
+	return &Settings{
+		Appearance:   appearance,
+		Theme:        theme,
+		DateFormat:   activeDateFormat,
+		BranchFormat: activeBranchFormat,
+		AuthorFormat: activeAuthorFormat,
+	}
 }

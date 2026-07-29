@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -22,6 +23,7 @@ type worktreeItem struct {
 	w        git.Worktree
 	cwd      string
 	relDate  string
+	unix     int64
 	isMainWT bool
 }
 
@@ -30,17 +32,22 @@ func (i worktreeItem) Columns() []string {
 	if i.w.Detached {
 		branch = "(detached)"
 	}
-	return []string{shortestPath(i.w.Path, i.cwd), branch, shortSHA(i.w.Head), i.relDate}
+	return []string{
+		shortestPath(i.w.Path, i.cwd),
+		tui.FormatBranch(branch),
+		shortSHA(i.w.Head),
+		tui.FormatDate(i.unix, i.relDate),
+	}
 }
 func (i worktreeItem) FilterValue() string { return i.w.Path + " " + i.w.Branch }
 func (i worktreeItem) Current() bool       { return i.isMainWT }
 
 func worktreeColumns() []tui.Column {
 	return []tui.Column{
-		{Title: "path", MinWidth: 12, Flex: true, Density: tui.DensityShort},
-		{Title: "branch", MinWidth: 10, Density: tui.DensityShort},
+		{Title: "path", MinWidth: 12, Flex: true, Density: tui.DensityShort, Color: tui.ColorName},
+		{Title: "branch", MinWidth: 10, Density: tui.DensityShort, Color: tui.ColorName},
 		{Title: "commit", MinWidth: 7, Density: tui.DensityNormal, Color: tui.ColorSHA},
-		{Title: "date", MinWidth: 10, Density: tui.DensityNormal, Color: tui.ColorDate},
+		{Title: "date", MinWidth: 7, Density: tui.DensityNormal, Color: tui.ColorDate},
 	}
 }
 
@@ -83,25 +90,33 @@ func loadWorktreeItems(ctx context.Context, r *git.Runner) ([]tui.Item, error) {
 
 	items := make([]tui.Item, 0, len(worktrees))
 	for _, w := range worktrees {
-		date, err := commitRelDate(ctx, r, w.Head)
+		date, unix, err := commitRelDate(ctx, r, w.Head)
 		if err != nil {
-			date = ""
+			date, unix = "", 0
 		}
-		items = append(items, worktreeItem{w: w, cwd: cwd, relDate: date, isMainWT: w.Path == worktrees[0].Path})
+		items = append(items, worktreeItem{w: w, cwd: cwd, relDate: date, unix: unix, isMainWT: w.Path == worktrees[0].Path})
 	}
 	return items, nil
 }
 
-// commitRelDate returns sha's committer date in relative form, e.g. "3 days ago".
-func commitRelDate(ctx context.Context, r *git.Runner, sha string) (string, error) {
+// commitRelDate returns sha's committer date in relative form, e.g. "3 days ago",
+// and its unix timestamp for short/iso formatting.
+func commitRelDate(ctx context.Context, r *git.Runner, sha string) (string, int64, error) {
 	if sha == "" {
-		return "", nil
+		return "", 0, nil
 	}
-	out, err := r.Run(ctx, "show", "-s", "--format=%cr", sha)
+	out, err := r.Run(ctx, "show", "-s", "--format=%cr%x1f%ct", sha)
 	if err != nil {
-		return "", err
+		return "", 0, err
 	}
-	return strings.TrimSpace(out), nil
+	out = strings.TrimSpace(out)
+	fields := strings.Split(out, "\x1f")
+	rel := fields[0]
+	if len(fields) < 2 {
+		return rel, 0, nil
+	}
+	unix, _ := strconv.ParseInt(fields[1], 10, 64)
+	return rel, unix, nil
 }
 
 func targetWorktree(items []tui.Item) (worktreeItem, bool) {

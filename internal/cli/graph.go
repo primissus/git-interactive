@@ -24,14 +24,10 @@ func (i graphItem) Columns() []string {
 	if !i.row.HasCommit {
 		return []string{i.row.Prefix, "", "", "", ""}
 	}
-	author := i.row.Commit.AuthorName
-	date := i.row.Commit.RelDate
 	if i.full {
-		date = i.row.Commit.AbsDate
-	} else {
-		author = authorInitial(i.row.Commit.AuthorName)
+		return []string{i.row.Prefix + i.row.Commit.ShortSHA, i.row.Commit.Subject, i.row.Commit.AbsDate, i.row.Commit.AuthorName, strings.Join(i.row.Commit.Refs, ", ")}
 	}
-	return []string{i.row.Prefix + i.row.Commit.ShortSHA, i.row.Commit.Subject, date, author, strings.Join(i.row.Commit.Refs, ", ")}
+	return []string{i.row.Prefix + i.row.Commit.ShortSHA, i.row.Commit.Subject, tui.FormatDate(i.row.Commit.CommitUnix, i.row.Commit.RelDate), tui.FormatAuthor(i.row.Commit.AuthorName), strings.Join(i.row.Commit.Refs, ", ")}
 }
 
 // FilterValue excludes the graph glyphs so `/` search matches commit content,
@@ -48,7 +44,7 @@ func graphColumns() []tui.Column {
 	return []tui.Column{
 		{Title: "graph", MinWidth: 4, Density: tui.DensityShort, Render: tui.ColorizeGraphPrefix},
 		{Title: "message", MinWidth: 12, MaxWidth: 60, Flex: true, Density: tui.DensityShort},
-		{Title: "date", MinWidth: 10, Density: tui.DensityNormal, Color: tui.ColorDate},
+		{Title: "date", MinWidth: 7, Density: tui.DensityNormal, Color: tui.ColorDate},
 		{Title: "author", MinWidth: 8, Density: tui.DensityNormal, Color: tui.ColorAuthor},
 		{Title: "branches", MinWidth: 8, Density: tui.DensityFull, Color: tui.ColorRef},
 	}
