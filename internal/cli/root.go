@@ -42,6 +42,15 @@ func Execute() error {
 	if err := tui.LoadKeymap(); err != nil {
 		fmt.Fprintln(os.Stderr, "gint: "+err.Error())
 	}
+	// Same pattern for settings.json: load the user's appearance/theme choice
+	// (or fall back to System + default theme when the file is missing), then
+	// freeze the active palette before any command builds its columns.
+	if settings, err := tui.LoadSettings(); err != nil {
+		fmt.Fprintln(os.Stderr, "gint: "+err.Error())
+		tui.ApplySettings(nil) // safe defaults
+	} else {
+		tui.ApplySettings(settings)
+	}
 	root := newRootCmd()
 	return root.Execute()
 }

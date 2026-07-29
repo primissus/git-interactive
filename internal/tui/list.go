@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strconv"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -19,6 +20,7 @@ const (
 	modeInput
 	modeBatchPrompt
 	modeHelp
+	modeSettings
 )
 
 // List is gint's shared interactive view: a paginated, navigable, fuzzy-
@@ -50,6 +52,7 @@ type List struct {
 	menu     menuModel
 	confirm  confirmModel
 	input    inputModel
+	settings settingsModel
 	pending  *pending  // operation awaiting input/confirmation
 	batch    *batchRun // in-flight resilient bulk operation
 	countBuf string    // digits typed as a motion count prefix (e.g. "10" in 10j)
@@ -183,6 +186,9 @@ func (l *List) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return l, l.updateBatchPrompt(msg)
 	case modeHelp:
 		l.updateHelp(msg)
+		return l, nil
+	case modeSettings:
+		l.updateSettings(msg)
 		return l, nil
 	default:
 		return l.updateList(msg)
@@ -495,7 +501,8 @@ func (l *List) openMenuWith(ops []Operation) tea.Cmd {
 }
 
 // openCommandPalette opens the `:` command-mode menu with the contextual
-// operations plus a built-in quit entry, and tab autocomplete.
+// operations plus the built-in `settings` / `menu` (alias) and `quit` entries,
+// with tab autocomplete.
 func (l *List) openCommandPalette() tea.Cmd {
 	var ops []Operation
 	if l.selectMode && len(l.selected) > 0 {
@@ -503,7 +510,12 @@ func (l *List) openCommandPalette() tea.Cmd {
 	} else {
 		ops = l.itemOps()
 	}
-	ops = append(ops, Operation{ID: "builtin.quit", Name: "quit", Key: "", Scope: ScopeList})
+	builtins := []Operation{
+		{ID: "builtin.settings", Name: "settings", Scope: ScopeList},
+		{ID: "builtin.settings", Name: "menu", Scope: ScopeList}, // alias of :settings
+		{ID: "builtin.quit", Name: "quit", Scope: ScopeList},
+	}
+	ops = append(builtins, ops...)
 	l.menu = newMenu(ops, "", &l.styles, true)
 	l.mode = modeMenu
 	return textinput.Blink
@@ -646,9 +658,12 @@ func (l *List) updateMenu(msg tea.Msg) tea.Cmd {
 	switch l.menu.state {
 	case menuChosen:
 		l.mode = modeList
-		if l.menu.chosen.ID == "builtin.quit" {
+		switch l.menu.chosen.ID {
+		case "builtin.quit":
 			l.quitting = true
 			return tea.Quit
+		case "builtin.settings":
+			return l.openSettings()
 		}
 		return l.startOp(l.menu.chosen)
 	case menuCanceled:
@@ -656,6 +671,44 @@ func (l *List) updateMenu(msg tea.Msg) tea.Cmd {
 		return nil
 	}
 	return cmd
+}
+
+// openSettings constructs the settings overlay on top of the current list. The
+// overlay keeps a pointer to l.styles so its live preview (and esc revert) can
+// regenerate them in place — the list repaints immediately when the user
+// toggles appearance or selects a different theme.
+func (l *List) openSettings() tea.Cmd {
+	l.settings = newSettingsModel(&l.styles)
+	l.mode = modeSettings
+	return nil
+}
+
+// updateSettings drives the overlay. Its state transitions back to modeList on
+// either save (settingsApplied) or cancel (settingsCanceled); on save we surface
+// the result via a Status line so the user gets feedback even after the overlay
+// closes. Returns nothing — the settings overlay has no blinking cursor.
+func (l *List) updateSettings(msg tea.Msg) {
+	_ = l.settings.Update(msg)
+	switch l.settings.state {
+	case settingsApplied:
+		l.mode = modeList
+		chrome := chrome()
+		if l.settings.saveErr != nil {
+			msg := chrome.SettingsSaveFailed
+			if msg == "" {
+				msg = "save failed: %s"
+			}
+			l.status = fmt.Sprintf(msg, l.settings.saveErr)
+		} else {
+			msg := chrome.SettingsSaved
+			if msg == "" {
+				msg = "theme saved: %s"
+			}
+			l.status = fmt.Sprintf(msg, l.settings.activeTheme)
+		}
+	case settingsCanceled:
+		l.mode = modeList
+	}
 }
 
 func (l *List) updateConfirm(msg tea.Msg) tea.Cmd {

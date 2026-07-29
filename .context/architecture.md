@@ -16,7 +16,7 @@
 - `cmd/gint/` → main entry point
 - `internal/cli/` → Cobra commands (one file per command; `_demo` is the hidden TUI harness)
 - `internal/git/` → git exec wrapper + porcelain parsers
-- `internal/tui/` → shared Bubble Tea interaction layer (list, search, menu, confirm, input, select mode, tabular renderer, `batch.go` resilient bulk ops, `?` help overlay, count-prefix/half-page nav, per-column color via `Column.Color`/`Column.Render`). Commands supply `Item`s + `Operation`s to `tui.New`; they never reimplement interactions.
+- `internal/tui/` → shared Bubble Tea interaction layer (list, search, menu, confirm, input, select mode, tabular renderer, `batch.go` resilient bulk ops, `?` help overlay, count-prefix/half-page nav, per-column color via `Column.Color`/`Column.Render`, theming via `themes.go` + `settings.go` + the `:settings` overlay). Commands supply `Item`s + `Operation`s to `tui.New`; they never reimplement interactions.
 - `phases/p1..p8/` → development plan (PLAN.md) and status (PROGRESS.md) per phase
 - `PROMPT.md` → full product spec (source of truth for behavior)
 
@@ -25,5 +25,8 @@ A Cobra command parses flags → fetches data through `internal/git` (exec `git`
 
 ## What does NOT exist (and should not be created)
 - No go-git dependency by default — shell out to `git`.
-- No config-file system (Viper) unless user configuration actually appears.
+- No Viper-based config system — the only config files are the small JSON ones: `~/.config/gint/keymap.json` (key/hint overrides) and `~/.config/gint/settings.json` (appearance + theme). Both load via `encoding/json`, not Viper.
 - No v1 implementation of `remote`, `branch-remotes`, `diff`, `resolve-conflicts` — post-v1, but keep select mode and the conflict component open for them (PROMPT.md → Future).
+
+## Theming & appearance
+The TUI palette is theme-driven (see `.context/decisions.md` "Theming system"). `internal/tui/themes.go` registers 7 themes (default + gruvbox + solarized + catppuccin + github + nord + rose-pine), each with Light and Dark variants. `internal/tui/settings.go` persists the user's choice to `~/.config/gint/settings.json` (`appearance` ∈ {system, light, dark}; `theme` ∈ `ThemeNames()`). At startup `cli.Execute` calls `LoadSettings` → `ApplySettings` → `setPalette`, which freezes the resolved variant into the package-level color vars (`colorAccent`/`colorCurrent`/`colorFaint`/…/`ColorName`/…/`graphLaneColors`) and builds `Styles` from them via `StylesFromColors()`. The `:settings` (alias `:menu`) overlay (`internal/tui/settings_model.go`) previews theme/appearance changes live by re-running `setPalette` + regenerating the owning `List`'s `*Styles` in place; Esc reverts, `s` saves to disk. `system` resolves once at startup via `detectOSAppearance` (`defaults read`, `gsettings`, `reg query`) with terminal-background detection as a fallback — OS dark-mode toggles don't update the running TUI, only the next session.

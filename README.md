@@ -120,6 +120,7 @@ All interactive views share the same keys:
 | `←`/`h`, `→`/`l`, `PgUp`/`PgDn` | page |
 | `g` / `G` | jump to top / bottom — prefix `g` with a row number (from the gutter) to jump there, e.g. `12g` |
 | `/` | fuzzy search |
+| `:` | command palette (type `settings` or `menu` to open the [settings overlay](#theming)) |
 | `Enter` | open the context menu for the current row |
 | `Shift+X` | select mode (`space`/`x` toggle rows, Enter for bulk operations) |
 | `?` | show all keys and this view's operations |
@@ -148,6 +149,58 @@ phrase — e.g. `force` to force-delete a branch, `delete all` for a bulk delete
 its menu entry.
 
 ## Configuration
+
+### Theming
+
+`gint` ships with seven color themes — `default`, `gruvbox`, `solarized`,
+`catppuccin`, `github`, `nord`, and `rose-pine` — each with Light and Dark
+variants. Hold `:` to open the command palette, type `settings` (or its
+alias `menu`), press Enter, and a settings overlay opens with an appearance
+toggle (System / Light / Dark) and a theme list with live swatch previews:
+
+```
+╭─ Settings ──────────────────────────────╮
+│  Appearance                             │
+│  ◉ System   ○ Light   ○ Dark            │
+│                                         │
+│  Theme                                  │
+│  ▸ default          ■  ■  ■  ■          │
+│    gruvbox          ■  ■  ■  ■          │
+│    solarized        ■  ■  ■  ■          │
+│    ...                                  │
+│                                         │
+│  ↑/↓ select · ←/→ toggle · enter select │
+│  · s save · esc cancel                  │
+╰─────────────────────────────────────────╯
+```
+
+Navigation: `j`/`k` between rows, `←`/`→` to cycle the appearance option
+(on the appearance row), `Enter` to preview a theme, `s` to save to
+`~/.config/gint/settings.json` and close, `Esc` to revert and close. Changes
+preview live — row backgrounds, highlights, and the overlay update immediately;
+per-column tints (e.g. the SHA amber) update on the next invocation.
+
+`System` (the default when no settings.json exists) detects the OS dark-mode
+preference once at startup (macOS `AppleInterfaceStyle`, GNOME `gsettings`,
+Windows `reg query`, with terminal-background detection as a fallback) and
+freezes the resolved variant for the session — toggling OS dark mode while
+`gint` is running doesn't affect the current session; restart to pick it up.
+
+The settings file is plain JSON:
+
+```json
+{
+  "appearance": "system",
+  "theme": "gruvbox"
+}
+```
+
+Valid values: `appearance` ∈ `{system, light, dark}` (empty = `system`);
+`theme` ∈ `ThemeNames()` (empty or unknown = `default`). A missing or malformed
+file is not fatal — `gint` warns and falls back to defaults, exactly like
+`keymap.json`.
+
+### Keymap overrides
 
 Every displayed hint — an operation's shortcut key and label, and the generic
 footer/prompt/help text — has a built-in default and can be overridden without

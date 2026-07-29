@@ -38,7 +38,17 @@ type Chrome struct {
 	BatchContinuePrompt string // has one %d verb (remaining count)
 	BatchSummary        string // has %s (verb) and %d (count) verbs
 	BatchFailSuffix     string // has %d (count) and %s (reasons) verbs
-	Nav                 [][2]string
+
+	// Settings overlay (`:settings` / `:menu`) hints. Defaults are populated by
+	// defaultChrome; every field is overridable via keymap.json like the others.
+	SettingsTitle      string
+	SettingsAppearance string
+	SettingsTheme      string
+	SettingsFooter     string
+	SettingsSaved      string // has one %s verb (theme name)
+	SettingsSaveFailed string // has one %s verb (error)
+
+	Nav [][2]string
 }
 
 // defaultChrome returns gint's built-in hint text — the literal values every
@@ -71,6 +81,13 @@ func defaultChrome() Chrome {
 		BatchContinuePrompt: "continue? %d left  ",
 		BatchSummary:        "%s %d",
 		BatchFailSuffix:     " · failed %d (%s)",
+
+		SettingsTitle:      "Settings",
+		SettingsAppearance: "Appearance",
+		SettingsTheme:      "Theme",
+		SettingsFooter:     "↑/↓ select · ←/→ toggle (on appearance) · enter select · s save · esc cancel",
+		SettingsSaved:      "theme saved: %s",
+		SettingsSaveFailed: "save failed: %s",
 
 		Nav: [][2]string{
 			{"j / k", "move down / up"},
@@ -126,11 +143,19 @@ type chromeOverride struct {
 	ConfirmYesNoFooter  *string `json:"confirm_yes_no_footer"`
 	ConfirmChoiceFooter *string `json:"confirm_choice_footer"`
 
-	BatchFooter         *string      `json:"batch_footer"`
-	BatchContinuePrompt *string      `json:"batch_continue_prompt"`
-	BatchSummary        *string      `json:"batch_summary"`
-	BatchFailSuffix     *string      `json:"batch_fail_suffix"`
-	Nav                 *[][2]string `json:"nav"`
+	BatchFooter         *string `json:"batch_footer"`
+	BatchContinuePrompt *string `json:"batch_continue_prompt"`
+	BatchSummary        *string `json:"batch_summary"`
+	BatchFailSuffix     *string `json:"batch_fail_suffix"`
+
+	SettingsTitle      *string `json:"settings_title"`
+	SettingsAppearance *string `json:"settings_appearance"`
+	SettingsTheme      *string `json:"settings_theme"`
+	SettingsFooter     *string `json:"settings_footer"`
+	SettingsSaved      *string `json:"settings_saved"`
+	SettingsSaveFailed *string `json:"settings_save_failed"`
+
+	Nav *[][2]string `json:"nav"`
 }
 
 // keymapFile is keymap.json's on-disk shape.
@@ -218,6 +243,12 @@ func applyChromeOverride(c *Chrome, ov *chromeOverride) {
 	set(&c.BatchContinuePrompt, ov.BatchContinuePrompt)
 	set(&c.BatchSummary, ov.BatchSummary)
 	set(&c.BatchFailSuffix, ov.BatchFailSuffix)
+	set(&c.SettingsTitle, ov.SettingsTitle)
+	set(&c.SettingsAppearance, ov.SettingsAppearance)
+	set(&c.SettingsTheme, ov.SettingsTheme)
+	set(&c.SettingsFooter, ov.SettingsFooter)
+	set(&c.SettingsSaved, ov.SettingsSaved)
+	set(&c.SettingsSaveFailed, ov.SettingsSaveFailed)
 	if ov.Nav != nil {
 		c.Nav = *ov.Nav
 	}

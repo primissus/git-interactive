@@ -138,3 +138,16 @@
 - **`c` copies branch name** — reuses the existing `copyToClipboard` stub pattern from `y` (copy sha). No framework change.
 - **`sortLabelMsg` / `SetSortLabel`** — small framework addition so commands can update the title's `sort:` hint at runtime, composed by the command (e.g. `sort <mode>` or `sort <mode> · tree`).
 - **Why:** the user wanted vim-like ergonomics — `:` for commands, cycle-sort, tree grouping — plus pre-filled rename. Each feature reuses existing framework patterns (ops, DefaultActioner, InputSpec) so surface area is minimal.
+
+## 2026-07 · Theming system: system/light/dark + 7 color themes (`:settings`/`:menu`)
+
+- **Decision:** gint gains a theming layer with three appearance states (`system`, `light`, `dark`) and seven registered themes (`default`, `gruvbox`, `solarized`, `catppuccin`, `github`, `nord`, `rose-pine`), each carrying Light + Dark color variants. The user's choice persists to `~/.config/gint/settings.json` (a sibling of `keymap.json`); a new `:settings` overlay (aliased `:menu`, opened from the existing `:` command palette) toggles appearance and selects a theme with live color-swatch previews. Changes preview live (the overlay re-runs `setPalette` and regenerates the owning `List`'s `*Styles` in place), Esc reverts to the pre-overlay palette, `s` saves to disk and reports via the footer Status line.
+- **Why:** user request — smooth light/dark experience across developer-preferred palettes. `system` (the first-run default with no settings.json) preserves the prior adaptive behavior: `resolveAppearance` shells out to `defaults read` (macOS), `gsettings` (GNOME), `reg query` (Windows), falling back to `lipgloss.HasDarkBackground()` terminal detection, then `dark`. Resolving once at startup and freezing via plain `lipgloss.Color` (not `AdaptiveColor`) avoids per-render re-detection and is consistent with peers (lazygit, gh-dash). Keeping `default` as a registered theme means users can always roll back.
+- **Rejected:**
+  - Removing `AdaptiveColor` entirely — breaks the no-config out-of-box experience for users whose terminal advertises a background.
+  - Freezing to a single appearance without `system` — users on macOS automatic dark-mode switching would have to re-edit settings.json manually on every OS toggle.
+  - Per-render re-resolving of `system` — measurable cost and no UX benefit (live OS toggles while gint is running can't be applied to the running TUI without a restart anyway).
+  - Updating `Column.Color` tints live — they're assigned at command construction time; chasing a rebuild would add complexity for a tiny visual gain (row backgrounds + markers + overlays all update live; column-specific tints catch up on the next invocation). Tracked as a known-issue tradeoff, not a defect.
+  - Adding `S` as a shortcut for settings — collides with the existing `branch` sort-cycle binding; `:settings` via the palette is enough.
+  - Two separate "gruvbox light" / "gruvbox dark" theme entries — user confirmed a single `gruvbox` theme with Light = light soft and Dark = medium dark matches the requested `depending on selected appearance` semantics.
+- **Status:** current

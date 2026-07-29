@@ -24,48 +24,54 @@ type Styles struct {
 	Marker      lipgloss.Style // dot marker for the current item
 	Checkbox    lipgloss.Style // select-mode marker
 
-	// Overlays (menu, confirm, input).
-	Overlay       lipgloss.Style
-	MenuItem      lipgloss.Style
-	MenuActive    lipgloss.Style
-	ConfirmPrompt lipgloss.Style
-	ConfirmOption lipgloss.Style
-	ConfirmActive lipgloss.Style
-	ConfirmPhrase lipgloss.Style
-	SearchPrompt  lipgloss.Style
+	// Overlays (menu, confirm, input, settings).
+	Overlay           lipgloss.Style
+	MenuItem          lipgloss.Style
+	MenuActive        lipgloss.Style
+	ConfirmPrompt     lipgloss.Style
+	ConfirmOption     lipgloss.Style
+	ConfirmActive     lipgloss.Style
+	ConfirmPhrase     lipgloss.Style
+	SearchPrompt      lipgloss.Style
+	SettingsTitle     lipgloss.Style
+	SettingsSection   lipgloss.Style
+	SettingsRow       lipgloss.Style
+	SettingsRowActive lipgloss.Style
+	SettingsOption    lipgloss.Style
+	SettingsOptionOn  lipgloss.Style // selected/toggled-on option
+	SettingsOptionOff lipgloss.Style // dim option
+	SettingsHelp      lipgloss.Style
+	SettingsSwatch    lipgloss.Style // style wrapping a single swatch block
 }
 
-// Palette colors — adaptive so they read on light and dark terminals.
+// Palette colors. Typed as lipgloss.TerminalColor (the interface) so they can
+// hold either AdaptiveColor (auto-detecting, the pre-theming default) or a
+// frozen lipgloss.Color from the active theme. setPalette in themes.go swaps
+// these at startup and on settings changes.
 var (
-	colorAccent  = lipgloss.AdaptiveColor{Light: "#7D56F4", Dark: "#A78BFA"}
-	colorCurrent = lipgloss.AdaptiveColor{Light: "#1A7F37", Dark: "#3FB950"}
-	colorFaint   = lipgloss.AdaptiveColor{Light: "#6E7781", Dark: "#8B949E"}
-	colorDanger  = lipgloss.AdaptiveColor{Light: "#CF222E", Dark: "#F85149"}
-	colorInvert  = lipgloss.AdaptiveColor{Light: "#FFFFFF", Dark: "#0D1117"}
+	colorAccent  lipgloss.TerminalColor
+	colorCurrent lipgloss.TerminalColor
+	colorFaint   lipgloss.TerminalColor
+	colorDanger  lipgloss.TerminalColor
+	colorInvert  lipgloss.TerminalColor
 )
 
 // Column tint colors, exported so command views can hand a hue to Column.Color.
 // They reuse the base palette where it fits and add a few distinct accents so a
-// wide table (sha · message · date · author · refs) stays scannable.
+// wide table (sha · message · date · author · refs) stays scannable. Set by
+// setPalette from the active theme; set once at startup so command constructors
+// pick them up.
 var (
-	ColorName   = colorAccent                                               // branch / primary identifier
-	ColorSHA    = lipgloss.AdaptiveColor{Light: "#9A6700", Dark: "#E3B341"} // amber
-	ColorDate   = colorFaint                                                // de-emphasized
-	ColorAuthor = lipgloss.AdaptiveColor{Light: "#0550AE", Dark: "#58A6FF"} // blue
-	ColorRef    = colorCurrent                                              // branch/ref decorations
+	ColorName   lipgloss.TerminalColor
+	ColorSHA    lipgloss.TerminalColor
+	ColorDate   lipgloss.TerminalColor
+	ColorAuthor lipgloss.TerminalColor
+	ColorRef    lipgloss.TerminalColor
 )
 
 // graphLaneColors cycles across a graph's lanes so adjacent branches read as
-// distinct strands rather than one monochrome mesh.
-var graphLaneColors = []lipgloss.TerminalColor{
-	colorAccent,
-	lipgloss.AdaptiveColor{Light: "#0550AE", Dark: "#58A6FF"}, // blue
-	colorCurrent, // green
-	lipgloss.AdaptiveColor{Light: "#9A6700", Dark: "#E3B341"}, // amber
-	lipgloss.AdaptiveColor{Light: "#CF222E", Dark: "#F85149"}, // red
-	lipgloss.AdaptiveColor{Light: "#8250DF", Dark: "#D2A8FF"}, // violet
-	lipgloss.AdaptiveColor{Light: "#1B7C83", Dark: "#39C5CF"}, // teal
-}
+// distinct strands rather than one monochrome mesh. Rebuilt by setPalette.
+var graphLaneColors []lipgloss.TerminalColor
 
 // ColorizeGraphPrefix tints a `git log --graph` glyph run lane by lane: each
 // visible column position cycles through graphLaneColors, so vertical strands
@@ -88,8 +94,11 @@ func ColorizeGraphPrefix(s string) string {
 	return b.String()
 }
 
-// DefaultStyles returns the standard gint theme.
-func DefaultStyles() Styles {
+// StylesFromColors builds the full Styles struct from the active package-level
+// palette vars. Called once by DefaultStyles at startup and again by the
+// settings overlay whenever the user changes the theme/appearance (live
+// preview + revert both route through here).
+func StylesFromColors() Styles {
 	return Styles{
 		Title:         lipgloss.NewStyle().Bold(true).Foreground(colorAccent),
 		Header:        lipgloss.NewStyle().Bold(true).Foreground(colorFaint),
@@ -115,5 +124,24 @@ func DefaultStyles() Styles {
 		ConfirmActive: lipgloss.NewStyle().Padding(0, 1).Bold(true).Foreground(colorInvert).Background(colorAccent),
 		ConfirmPhrase: lipgloss.NewStyle().Bold(true).Foreground(colorDanger),
 		SearchPrompt:  lipgloss.NewStyle().Foreground(colorAccent),
+
+		// Settings overlay — uses the same palette but with a couple of extra
+		// slots for the appearance-toggle row and theme-list rows.
+		SettingsTitle:     lipgloss.NewStyle().Bold(true).Foreground(colorAccent),
+		SettingsSection:   lipgloss.NewStyle().Bold(true).Foreground(colorFaint),
+		SettingsRow:       lipgloss.NewStyle().Padding(0, 1),
+		SettingsRowActive: lipgloss.NewStyle().Padding(0, 1).Bold(true).Foreground(colorInvert).Background(colorAccent),
+		SettingsOption:    lipgloss.NewStyle().Padding(0, 1),
+		SettingsOptionOn:  lipgloss.NewStyle().Padding(0, 1).Bold(true).Foreground(colorCurrent),
+		SettingsOptionOff: lipgloss.NewStyle().Padding(0, 1).Foreground(colorFaint),
+		SettingsHelp:      lipgloss.NewStyle().Foreground(colorFaint),
+		SettingsSwatch:    lipgloss.NewStyle(),
 	}
+}
+
+// DefaultStyles returns the standard gint theme, built from the active palette.
+// Callers that want to tweak individual fields should copy the returned struct
+// rather than call this repeatedly after a theme change.
+func DefaultStyles() Styles {
+	return StylesFromColors()
 }

@@ -379,3 +379,78 @@ func TestSelectModeTracksSelection(t *testing.T) {
 		t.Fatalf("selected %d rows, want 2", got)
 	}
 }
+
+// TestSettingsOpensViaCommandPalette exercises the `:settings` flow end-to-end:
+// `:` opens the palette, typing "settings" narrows it, Enter opens the settings
+// overlay (modeSettings), Esc cancels and returns to modeList with the original
+// palette restored.
+func TestSettingsOpensViaCommandPalette(t *testing.T) {
+	// Pin to default/dark so the test isn't sensitive to host OS appearance.
+	defer setPalette("default", "dark")
+	setPalette("default", "dark")
+
+	tm := newTestModel(t)
+	// `:` opens the palette.
+	sendKeys(tm, keyRunes(':'))
+	// Type "settings" to narrow the fuzzy filter to the builtin entry.
+	tm.Type("settings")
+	sendKeys(tm, keyType(tea.KeyEnter)) // pick "settings"
+
+	// The settings overlay should now be visible (Title renders as "Settings").
+	waitForText(t, tm, "Settings")
+
+	// Esc cancels — back to list mode, ActiveTheme reset to default.
+	sendKeys(tm, keyType(tea.KeyEsc))
+	waitForText(t, tm, "j/k move") // footer chrome returns once overlay closes
+	finish(t, tm)
+
+	if ActiveTheme.Name != "default" {
+		t.Errorf("ActiveTheme.Name after esc = %q, want %q", ActiveTheme.Name, "default")
+	}
+}
+
+// TestSettingsAppliesThemeAndSaves verifies j/k navigation + Enter selects a
+// different theme (live preview), and `s` saves to a temp settings.json.
+func TestSettingsAppliesThemeAndSaves(t *testing.T) {
+	defer setPalette("default", "dark")
+	setPalette("default", "dark")
+	// Redirect config dir to a temp location for SaveSettings — without this,
+	// SaveSettings would write to the user's real ~/.config/gint/.
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+
+	tm := newTestModel(t)
+	// Open palette, type "settings", enter.
+	sendKeys(tm, keyRunes(':'))
+	tm.Type("settings")
+	sendKeys(tm, keyType(tea.KeyEnter))
+	waitForText(t, tm, "Settings")
+
+	// Move to first theme row (cursor 0 = appearance; one `j` lands on row 1
+	// = "default", another lands on row 2 = "gruvbox"). Pick gruvbox.
+	sendKeys(tm, keyRunes('j'), keyRunes('j'))
+	sendKeys(tm, keyType(tea.KeyEnter)) // preview-select gruvbox
+	// The gruvbox row should now be the active ▸ row in the visible output.
+	waitForText(t, tm, "gruvbox")
+	if ActiveTheme.Name != "gruvbox" {
+		t.Errorf("ActiveTheme.Name after preview = %q, want %q", ActiveTheme.Name, "gruvbox")
+	}
+
+	// Save + close — 's' triggers settingsApplied → modeList + status set.
+	sendKeys(tm, keyRunes('s'))
+	// After saving, the overlay closes and the saved-confirmation status shows.
+	waitForText(t, tm, "saved")
+	finish(t, tm)
+
+	// Verify settings.json was actually written to the temp config dir.
+	s, err := LoadSettings()
+	if err != nil {
+		t.Fatalf("LoadSettings after save: %v", err)
+	}
+	if s == nil {
+		t.Fatal("LoadSettings after save = nil, want file present")
+	}
+	if s.Theme != "gruvbox" {
+		t.Errorf("persisted Theme = %q, want %q", s.Theme, "gruvbox")
+	}
+}

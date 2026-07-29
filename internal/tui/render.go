@@ -270,6 +270,8 @@ func (l *List) footer() string {
 		return l.batchPromptView()
 	case modeHelp:
 		return l.helpView()
+	case modeSettings:
+		return l.settings.View()
 	}
 
 	help := chrome().Footer
