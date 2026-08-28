@@ -3,6 +3,8 @@ package cli
 import (
 	"testing"
 
+	tea "github.com/charmbracelet/bubbletea"
+
 	"git-interact/internal/git"
 	"git-interact/internal/tui"
 )
@@ -127,24 +129,77 @@ func TestRebaseSelectMarkOps(t *testing.T) {
 	marks := &rebaseMarks{}
 
 	// Mark base and target.
-	runMarkOp(t, "select base", marks, branches, 0)
+	runMarkOp(t, "onto different branch", marks, branches, 0)
 	if marks.base != "main" {
 		t.Fatalf("marks.base = %q, want main", marks.base)
 	}
-	runMarkOp(t, "select target", marks, branches, 1)
+	runMarkOp(t, "rebase this branch instead", marks, branches, 1)
 	if marks.target != "feat/x" {
 		t.Fatalf("marks.target = %q, want feat/x", marks.target)
 	}
 
 	// Overwriting a mark is allowed.
-	runMarkOp(t, "select base", marks, branches, 2)
+	runMarkOp(t, "onto different branch", marks, branches, 2)
 	if marks.base != "feat/y" {
 		t.Fatalf("marks.base after overwrite = %q, want feat/y", marks.base)
 	}
 
 	// Marking the other role's branch is rejected and keeps the old mark.
-	runMarkOp(t, "select base", marks, branches, 1)
+	runMarkOp(t, "onto different branch", marks, branches, 1)
 	if marks.base != "feat/y" {
 		t.Fatalf("marks.base after rejected mark = %q, want feat/y (unchanged)", marks.base)
+	}
+}
+
+func TestDefaultRebaseMarks(t *testing.T) {
+	branches := []git.Branch{{Name: "main"}, {Name: "feat/x", Head: true}}
+	m := defaultRebaseMarks(branches)
+	if m.target != "feat/x" {
+		t.Fatalf("default target = %q, want feat/x", m.target)
+	}
+	if m.base != "" {
+		t.Fatalf("default base = %q, want empty", m.base)
+	}
+	// Detached HEAD: no current branch, so nothing is pre-marked.
+	detached := []git.Branch{{Name: "main"}}
+	if m2 := defaultRebaseMarks(detached); m2.target != "" || m2.base != "" {
+		t.Fatalf("detached default marks = target %q base %q, want both empty", m2.target, m2.base)
+	}
+}
+
+func TestRebaseApplyRequiresBothMarks(t *testing.T) {
+	branches := []git.Branch{{Name: "main"}, {Name: "feat/x", Head: true}}
+
+	// The zero-arg selector pre-marks the target; that must not let apply
+	// succeed on its own — a base is still required.
+	runApply := func(marks *rebaseMarks) (applied bool, cmd tea.Cmd) {
+		applied = false
+		ops := buildRebaseSelectOps(marks, branches, &applied)
+		for _, op := range ops {
+			if op.Name == "apply" {
+				return applied, op.Run(tui.OpContext{})
+			}
+		}
+		t.Fatal("apply operation not found")
+		return false, nil
+	}
+
+	applied, cmd := runApply(defaultRebaseMarks(branches))
+	if applied {
+		t.Fatal("apply succeeded with only a target marked; a base must be required")
+	}
+	if cmd == nil {
+		t.Fatal("apply with only a target should emit a status, got nil command")
+	}
+
+	// Once a base is also marked, apply succeeds.
+	marks := defaultRebaseMarks(branches)
+	marks.base = "main"
+	applied, cmd = runApply(marks)
+	if !applied {
+		t.Fatal("apply with both marks should succeed")
+	}
+	if cmd == nil {
+		t.Fatal("apply with both marks should emit a quit command")
 	}
 }

@@ -68,15 +68,31 @@ func targetRebaseBranch(items []tui.Item) (rebaseSelectItem, bool) {
 	return it, ok
 }
 
-// buildRebaseSelectOps returns the selector's operations: mark the highlighted
-// branch as base/target (overwriting any previous mark, never equal to the
-// other) and apply the selection.
+// defaultRebaseMarks pre-marks the current branch (HEAD) as the target — the
+// natural default for zero-arg `gint rebase`. The base is deliberately left
+// unset: apply never succeeds without both a target and a base mark, so a
+// pre-set target does not excuse a missing base.
+func defaultRebaseMarks(branches []git.Branch) *rebaseMarks {
+	m := &rebaseMarks{}
+	for _, b := range branches {
+		if b.Head {
+			m.target = b.Name
+			break
+		}
+	}
+	return m
+}
+
+// buildRebaseSelectOps returns the selector's operations: rebase the current
+// (target) branch onto a different branch, override the target to rebase the
+// highlighted branch instead (both overwrite any previous mark, never equal to
+// the other), and apply the selection.
 func buildRebaseSelectOps(marks *rebaseMarks, branches []git.Branch, applied *bool) []tui.Operation {
 	emit := func() tea.Cmd { return tui.SetItems(rebaseSelectItems(branches, marks)) }
 
 	return tui.ApplyKeymap("rebase-select", []tui.Operation{
 		{
-			Name: "select base", Key: "B", Scope: tui.ScopeItem,
+			Name: "onto different branch", Key: "B", Scope: tui.ScopeItem,
 			Run: func(c tui.OpContext) tea.Cmd {
 				it, ok := targetRebaseBranch(c.Items)
 				if !ok {
@@ -86,11 +102,11 @@ func buildRebaseSelectOps(marks *rebaseMarks, branches []git.Branch, applied *bo
 					return tui.Status("base and target must differ")
 				}
 				marks.base = it.b.Name
-				return tea.Batch(tui.Status("base: "+it.b.Name), emit())
+				return tea.Batch(tui.Status("onto: "+it.b.Name), emit())
 			},
 		},
 		{
-			Name: "select target", Key: "T", Scope: tui.ScopeItem,
+			Name: "rebase this branch instead", Key: "T", Scope: tui.ScopeItem,
 			Run: func(c tui.OpContext) tea.Cmd {
 				it, ok := targetRebaseBranch(c.Items)
 				if !ok {
@@ -107,7 +123,7 @@ func buildRebaseSelectOps(marks *rebaseMarks, branches []git.Branch, applied *bo
 			Name: "apply", Scope: tui.ScopeList,
 			Run: func(tui.OpContext) tea.Cmd {
 				if marks.base == "" || marks.target == "" {
-					return tui.Status("select a base (B) and a target (T) first")
+					return tui.Status("select a target (T) and an onto branch (B) first")
 				}
 				*applied = true
 				return tea.Quit
@@ -116,19 +132,19 @@ func buildRebaseSelectOps(marks *rebaseMarks, branches []git.Branch, applied *bo
 	})
 }
 
-// runRebaseSelector runs the branch selector / confirmation loop: mark base
-// and target, apply, confirm "Rebase <target> onto <base>?" — a declined
-// confirm reopens the selector with the marks kept. In preview mode
-// (--commits) apply returns the marks immediately, since nothing destructive
-// needs confirming. It returns target == "" when the user quits without
-// applying.
+// runRebaseSelector runs the branch selector / confirmation loop: the current
+// branch comes pre-marked as target, then pick an onto-branch (B) — or
+// override the target (T) — and apply; a declined confirm reopens the selector
+// with the marks kept. In preview mode (--commits) apply returns the marks
+// immediately, since nothing destructive needs confirming. It returns target
+// == "" when the user quits without applying.
 func runRebaseSelector(cmd *cobra.Command, r *git.Runner, preview bool) (target, base string, err error) {
 	ctx := cmd.Context()
 	branches, err := git.ListBranches(ctx, r)
 	if err != nil {
 		return "", "", err
 	}
-	marks := &rebaseMarks{}
+	marks := defaultRebaseMarks(branches)
 
 	// Default the cursor to the current branch — the natural target candidate.
 	cursor := 0
