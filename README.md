@@ -59,8 +59,8 @@ Either way the binary is stamped with the semver in [`VERSION`](VERSION) plus th
 exact build commit; check it with:
 
 ```sh
-gint --version   # gint 1.5.0
-gint version     # gint 1.5.0 (commit abc1234) + the binary path — useful for
+gint --version   # gint 1.6.0
+gint version     # gint 1.6.0 (commit abc1234) + the binary path — useful for
                  # telling a stale install on $PATH apart from a fresh build
 ```
 
