@@ -15,7 +15,14 @@ behavior always matches what git itself would do.
 `gint` shells out to `git`, so a **`git` binary on your `PATH`** is the only
 runtime requirement. No Go toolchain is needed to run a prebuilt binary.
 
-### Download a prebuilt binary (recommended)
+### Homebrew (macOS / Linux)
+
+```sh
+brew tap primissus/tap
+brew install --cask gint
+```
+
+### Download a prebuilt binary
 
 Grab the zip for your platform from the
 [latest release](https://github.com/primissus/git-interactive/releases/latest):
