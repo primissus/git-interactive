@@ -18,15 +18,26 @@ import (
 type logItem struct {
 	c      git.Commit
 	full   bool
-	wtDir  string // "" if no worktree has this commit's branch checked out
+	wtDir  string // absolute path of the worktree holding this commit's branch ("" = none)
+	cwd    string // process cwd, for live worktree-path formatting
 	isHead bool
+}
+
+// branchesCell renders a commit's local branch refs, honoring the active
+// branch format for each ref.
+func branchesCell(refs []string) string {
+	formatted := make([]string, len(refs))
+	for i, ref := range refs {
+		formatted[i] = tui.FormatBranch(ref)
+	}
+	return strings.Join(formatted, ", ")
 }
 
 func (i logItem) Columns() []string {
 	if i.full {
-		return []string{i.c.ShortSHA, i.c.Subject, i.c.AbsDate, i.c.AuthorName, strings.Join(i.c.Refs, ", "), i.wtDir}
+		return []string{i.c.ShortSHA, i.c.Subject, i.c.AbsDate, i.c.AuthorName, branchesCell(i.c.Refs), tui.FormatWorktreePath(i.wtDir, i.cwd)}
 	}
-	return []string{i.c.ShortSHA, i.c.Subject, tui.FormatDate(i.c.CommitUnix, i.c.RelDate), tui.FormatAuthor(i.c.AuthorName), strings.Join(i.c.Refs, ", "), i.wtDir}
+	return []string{i.c.ShortSHA, i.c.Subject, tui.FormatDate(i.c.CommitUnix, i.c.RelDate), tui.FormatAuthor(i.c.AuthorName), branchesCell(i.c.Refs), tui.FormatWorktreePath(i.wtDir, i.cwd)}
 }
 func (i logItem) FilterValue() string { return i.c.Subject + " " + strings.Join(i.c.Refs, " ") }
 func (i logItem) Current() bool       { return i.isHead }
@@ -75,6 +86,10 @@ func loadCommitItems(ctx context.Context, r *git.Runner, commits []git.Commit, f
 		return nil, err
 	}
 	headSHA, _ := git.RevParse(ctx, r, "HEAD") // "" on an unborn branch; no row matches
+	cwd, err := os.Getwd()
+	if err != nil {
+		cwd = "."
+	}
 
 	items := make([]tui.Item, len(commits))
 	for i, c := range commits {
@@ -85,26 +100,23 @@ func loadCommitItems(ctx context.Context, r *git.Runner, commits []git.Commit, f
 				break
 			}
 		}
-		items[i] = logItem{c: c, full: full, wtDir: wtDir, isHead: c.SHA == headSHA}
+		items[i] = logItem{c: c, full: full, wtDir: wtDir, cwd: cwd, isHead: c.SHA == headSHA}
 	}
 	return items, nil
 }
 
-// worktreeByBranch maps each checked-out branch to its worktree's shortest
-// display path.
+// worktreeByBranch maps each checked-out branch to its worktree's absolute
+// path. Paths are formatted for display (per the active worktree-path format)
+// at cell render time, so a settings change previews live.
 func worktreeByBranch(ctx context.Context, r *git.Runner) (map[string]string, error) {
 	worktrees, err := git.ListWorktrees(ctx, r)
 	if err != nil {
 		return nil, err
 	}
-	cwd, err := os.Getwd()
-	if err != nil {
-		cwd = "."
-	}
 	out := map[string]string{}
 	for _, w := range worktrees {
 		if w.Branch != "" {
-			out[w.Branch] = shortestPath(w.Path, cwd)
+			out[w.Branch] = w.Path
 		}
 	}
 	return out, nil
@@ -164,6 +176,10 @@ func runLog(cmd *cobra.Command, _ []string) error {
 		Operations: buildLogOperations(ctx, runner, flags.full),
 		Density:    densityFromFlags(flags),
 		Sort:       flags.sort,
+		View:       "log",
+		// Live hidden-column set from the :settings overlay. The List
+		// re-reads it per frame; -I output keeps the full column set.
+		HiddenColumns: tui.ActiveLogHidden,
 	})
 	p := tea.NewProgram(list, tea.WithAltScreen(), tea.WithContext(ctx))
 	_, err = p.Run()

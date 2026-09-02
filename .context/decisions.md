@@ -173,3 +173,30 @@
 - **Decision:** The `-F/--full` flag in log/graph still shows absolute ISO date + full author name, regardless of active format settings. Settings only affect the *default* display.
 - **Why:** `-F` is an explicit per-run override whose existing behavior is well-documented. Silently changing it would be surprising.
 - **Rejected:** making `-F` respect settings (breaking change); removing `-F` (useful one-shot toggle).
+
+## 2026-08 · Per-view column settings, worktree column, ultra-short branch format (p14)
+
+### Per-view hidden-column lists
+- **Decision:** `gint br` and `gint lg` persist their hidden column titles (`branchHiddenColumns`, `logHiddenColumns`) in `settings.json`, toggled from a Display section in the view-aware `:settings` overlay. Hiding is TUI-only — `-I`/`RenderTable` always renders the full column set, and the `Column` struct is untouched.
+- **Why:** users want per-view display control without re-running `-s`/`-F`; keeping `-I` stable preserves scripting. Filtering at the cli layer by `Title` via `tui.FilterColumns` reuses the existing density/column machinery, and a new `Config.ColumnsRefresh` hook lets the overlay preview/revert re-filter live.
+- **Rejected:** per-column `Hidden` field on `Column` (would leak view state into the pure spec); mutating the shared column slice (aliasing bugs); applying hidden lists to `-I` (breaks scripts and the "two never drift" contract).
+
+### Ultra-short branch format
+- **Decision:** a third global `BranchFormat` value `ultra-short`: the segment after the last `/`, vowels stripped (`feat/auth/login-form` → `lgn-frm`). It applies wherever branch names render, exactly like `short`.
+- **Why:** very long feature branches still overflow even `short` (`f/a/login-form`); a compact slug keeps tables scannable. Non-vowel characters (digits, `-`, `_`) survive so the result stays recognizable.
+- **Rejected:** reusing `short` semantics (still too wide for deeply nested names); dropping separators entirely (unreadable); a per-view format (one global knob matches the existing date/branch/author pattern).
+
+### Worktree-path format
+- **Decision:** one global `WorktreePathFormat` (`shortest`/`relative`/`absolute`) shared by the branch, log, and worktree views' path columns. Cells are sourced from `git worktree list` (which includes the main worktree; `%(worktreepath)` is empty there), stored raw, and formatted at render time so settings preview live.
+- **Why:** the old `shortestPath` was duplicated per view and couldn't be configured; rendering from the raw path keeps the source-of-truth single and the format a display concern.
+- **Rejected:** per-view path formats (one knob is enough); using `%(worktreepath)` for the main worktree (empty); a separate worktree column in `gint wt` (its path column already serves this).
+
+### TUI-only scope for settings
+- **Decision:** all p14 settings (hidden columns, worktree path format) affect the interactive views only.
+- **Why:** `-I` output is the scripting contract; changing it silently would break consumers. The `-F`/`-s` density flags remain the per-invocation column switch for `-I`.
+- **Rejected:** threading hidden columns through `TableOptions`.
+
+### Hiding columns must not filter the List's column set
+- **Decision:** hidden-column toggles apply inside `List.visibleColumns()` via a live `Config.HiddenColumns func() map[string]bool` predicate; `l.columns` always stays the full set.
+- **Why:** `columnIndex` maps a visible column back to its position in `l.columns`, and `cell()` indexes `Item.Columns()` cells positionally against that set. Pre-filtering the slice (the first p14 implementation, per the original plan) desynced the two — with `branch` hidden, the `last commit` header rendered branch names. The predicate approach also removed the `ColumnsRefresh`/`SetColumns` machinery: toggles preview live for free, exactly like the frozen format vars.
+- **Rejected:** filtering at the cli layer before `tui.New` (breaks cell alignment — the bug above); storing a separate Title→index map alongside the filtered set (two sources of truth for one ordering).

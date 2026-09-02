@@ -17,3 +17,4 @@ Phased plan to build `gint` per [PROMPT.md](../PROMPT.md). Each phase has a `PLA
 | [p11](p11/PLAN.md) | `branch` ergonomics: copy name, tree grouping, runtime sort, `:` palette, rename pre-fill |
 | [p12](p12/PLAN.md) | `branch` rebase operation: interactive rebase from branch list |
 | [p13](p13/PLAN.md) | Display improvements: per-column colors, deficit-weighted widths, configurable date/branch/author formats |
+| [p14](p14/PLAN.md) | Per-view column settings: `br`/`lg` display-column toggles + format menus, worktree column in `br`, worktree-path format |

@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -205,5 +206,43 @@ func TestBranchRebaseOpGuardCurrentBranch(t *testing.T) {
 	}
 	if _, ok := cmd().(tea.QuitMsg); ok {
 		t.Fatal("guard op returned tea.QuitMsg, should return status msg")
+	}
+}
+
+// TestBranchItemWorktreeColumn verifies the branch row's 5th cell carries the
+// worktree path, formatted per the active worktree-path format (shortest).
+func TestBranchItemWorktreeColumn(t *testing.T) {
+	bi := branchItem{b: git.Branch{Name: "main"}, wtPath: "/home/u/proj", cwd: "/home/u"}
+	cols := bi.Columns()
+	if len(cols) != 5 {
+		t.Fatalf("branchItem.Columns() = %v, want 5 cells", cols)
+	}
+	if cols[4] != "proj" {
+		t.Errorf("worktree cell = %q, want %q (shortest)", cols[4], "proj")
+	}
+}
+
+// TestBranchHiddenColumnsNotInRenderTable verifies the -I path renders the
+// full column set regardless of the interactive view's hidden-column settings.
+// (The interactive List hides via its HiddenColumns predicate; RenderTable
+// never sees it.)
+func TestBranchHiddenColumnsNotInRenderTable(t *testing.T) {
+	var b strings.Builder
+	items := []tui.Item{
+		branchItem{b: git.Branch{Name: "main", Subject: "first", AuthorName: "A U"}, wtPath: "", cwd: "."},
+		branchItem{b: git.Branch{Name: "feature", Subject: "second", AuthorName: "A U"}, wtPath: "", cwd: "."},
+	}
+	if err := tui.RenderTable(&b, branchColumns(), items, tui.TableOptions{
+		Density: tui.DensityNormal,
+		Header:  true,
+		Marker:  true,
+	}); err != nil {
+		t.Fatalf("RenderTable: %v", err)
+	}
+	if !strings.Contains(b.String(), "last commit") {
+		t.Error("-I output missing the 'last commit' column")
+	}
+	if !strings.Contains(b.String(), "worktree") {
+		t.Error("-I output missing the worktree column header")
 	}
 }

@@ -74,7 +74,7 @@ parentheses.
 
 | Command | Alias | What it does |
 |---|---|---|
-| `gint branch` | `br` | Browse branches (last commit, author, date). Checkout, delete, rename, pull/push, merge, bulk archive/delete. |
+| `gint branch` | `br` | Browse branches (last commit, author, date, worktree). Checkout, delete, rename, pull/push, merge, bulk archive/delete. |
 | `gint tags` | `tag` | Browse tags (message, tagger/author, date). Checkout (detached), delete, push, bulk delete. |
 | `gint worktree` | `wt` | Browse worktrees. Checkout (prints the path — see below), create, prune, lock/unlock, delete. |
 | `gint log` | `lg` | Browse commits. Checkout (detached), cherry-pick, squash, reset, merge, copy sha. |
@@ -156,7 +156,8 @@ its menu entry.
 `catppuccin`, `github`, `nord`, and `rose-pine` — each with Light and Dark
 variants. Hold `:` to open the command palette, type `settings` (or its
 alias `menu`), press Enter, and a settings overlay opens with an appearance
-toggle (System / Light / Dark) and a theme list with live swatch previews:
+toggle (System / Light / Dark), per-view Display/format rows, and a theme
+list with live swatch previews:
 
 ```
 ╭─ Settings ──────────────────────────────╮
@@ -194,7 +195,8 @@ The settings file is plain JSON:
   "theme": "gruvbox",
   "dateFormat": "short",
   "branchFormat": "full",
-  "authorFormat": "short"
+  "authorFormat": "short",
+  "worktreePathFormat": "shortest"
 }
 ```
 
@@ -205,12 +207,20 @@ Valid values:
 | `appearance` | `system`, `light`, `dark` | `system` | OS dark-mode preference detection at startup |
 | `theme` | `ThemeNames()` | `default` | One of the 7 registered themes |
 | `dateFormat` | `short`, `long`, `iso` | `short` | `short` = compact relative ("10 min"); `long` = git-style ("3 days ago"); `iso` = absolute ("2006-01-02 15:04") |
-| `branchFormat` | `full`, `short` | `full` | `short` = `d/d/name` (all segments except leaf → first rune) |
+| `branchFormat` | `full`, `short`, `ultra-short` | `full` | `short` = `d/d/name`; `ultra-short` = last segment, vowels stripped (`lgn-frm`) |
 | `authorFormat` | `short`, `initials`, `full` | `short` | `short` = "Name L."; `initials` = "NL"; `full` = "Name Last" |
+| `worktreePathFormat` | `shortest`, `relative`, `absolute` | `shortest` | Path shown in branch/log/worktree columns |
+| `branchHiddenColumns` | column title list | none | TUI-only; titles hidden in `gint br` |
+| `logHiddenColumns` | column title list | none | TUI-only; titles hidden in `gint lg` |
+
+`gint br` and `gint lg` add a **Display** section whose checkboxes toggle
+those columns (`[x]` = shown). Hiding is TUI-only — `-I` always prints the
+full column set. `gint br`'s overlay also cycles the worktree-path format;
+`gint lg`'s overlay cycles author and branch formats.
 
 A missing or malformed file is not fatal — `gint` warns and falls back to
-defaults, exactly like `keymap.json`. The `:settings` overlay exposes all five
-fields with live preview (←/→ toggle, Enter select, `s` save, Esc revert).
+defaults, exactly like `keymap.json`. Changes preview live (←/→ toggle,
+Enter select, `s` save, Esc revert).
 
 ### Keymap overrides
 

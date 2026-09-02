@@ -157,7 +157,38 @@ func TestFormatBranch(t *testing.T) {
 		t.Errorf("FormatBranch(short) = %q, want %q", got, "d/d/name")
 	}
 
+	activeBranchFormat = "ultra-short"
+	if got := FormatBranch("feat/auth/login-form"); got != "lgn-frm" {
+		t.Errorf("FormatBranch(ultra-short) = %q, want %q", got, "lgn-frm")
+	}
+
 	activeBranchFormat = "full" // restore
+}
+
+func TestUltraBranch(t *testing.T) {
+	tests := []struct {
+		name string
+		want string
+	}{
+		{"feat/auth/login-form", "lgn-frm"},
+		{"main", "mn"},
+		{"feature/UI_Tweak", "_Twk"},
+		{"a/e/i/o/u", ""}, // vowel-only last segment
+		{"deps/2024.3-r1", "2024.3-r1"},
+		{"(detached)", "(dtchd)"},
+		{"", ""},
+		{"single", "sngl"},
+		{"Mixed/Case-Version", "Cs-Vrsn"},
+		{"trailing/", ""},
+		{"no-slash-here", "n-slsh-hr"},
+	}
+
+	for _, tc := range tests {
+		got := UltraBranch(tc.name)
+		if got != tc.want {
+			t.Errorf("UltraBranch(%q) = %q, want %q", tc.name, got, tc.want)
+		}
+	}
 }
 
 func TestFormatAuthor(t *testing.T) {
@@ -186,6 +217,12 @@ func TestFreezeFormats(t *testing.T) {
 		t.Errorf("freezeFormats(nil) = %s/%s/%s, want short/full/short",
 			activeDateFormat, activeBranchFormat, activeAuthorFormat)
 	}
+	if activeWorktreePathFormat != "shortest" {
+		t.Errorf("freezeFormats(nil) worktreePathFormat = %q, want %q", activeWorktreePathFormat, "shortest")
+	}
+	if len(activeBranchHidden) != 0 || len(activeLogHidden) != 0 {
+		t.Errorf("freezeFormats(nil) hidden maps non-empty: %v / %v", activeBranchHidden, activeLogHidden)
+	}
 
 	// empty strings → defaults
 	freezeFormats(&Settings{DateFormat: "", BranchFormat: "", AuthorFormat: ""})
@@ -195,10 +232,27 @@ func TestFreezeFormats(t *testing.T) {
 	}
 
 	// explicit values
-	freezeFormats(&Settings{DateFormat: "iso", BranchFormat: "short", AuthorFormat: "initials"})
+	freezeFormats(&Settings{
+		DateFormat: "iso", BranchFormat: "short", AuthorFormat: "initials",
+		WorktreePathFormat:  "relative",
+		BranchHiddenColumns: []string{"last commit", ""},
+		LogHiddenColumns:    []string{"worktree"},
+	})
 	if activeDateFormat != "iso" || activeBranchFormat != "short" || activeAuthorFormat != "initials" {
 		t.Errorf("freezeFormats(explicit) = %s/%s/%s, want iso/short/initials",
 			activeDateFormat, activeBranchFormat, activeAuthorFormat)
+	}
+	if activeWorktreePathFormat != "relative" {
+		t.Errorf("freezeFormats(explicit) worktreePathFormat = %q, want %q", activeWorktreePathFormat, "relative")
+	}
+	if !activeBranchHidden["last commit"] {
+		t.Errorf("freezeFormats(explicit) branchHidden = %v, want 'last commit' hidden", activeBranchHidden)
+	}
+	if len(activeBranchHidden) != 1 {
+		t.Errorf("freezeFormats(explicit) branchHidden = %v, want exactly 1 entry (empty title dropped)", activeBranchHidden)
+	}
+	if !activeLogHidden["worktree"] {
+		t.Errorf("freezeFormats(explicit) logHidden = %v, want 'worktree' hidden", activeLogHidden)
 	}
 }
 
@@ -214,4 +268,48 @@ func TestFormatDateEdgeCases(t *testing.T) {
 		t.Errorf("FormatDate(0, 'some time') long = %q, want rel", got)
 	}
 	activeDateFormat = "short"
+}
+
+func TestFormatWorktreePath(t *testing.T) {
+	const cwd = "/home/user/proj"
+	tests := []struct {
+		format string
+		path   string
+		want   string
+	}{
+		{"shortest", "/home/user/proj/sub", "sub"},
+		{"shortest", "/home/user/proj", "."},
+		{"shortest", "/other/repo", "/other/repo"}, // escapes cwd and home → absolute
+		{"relative", "/home/user/proj/sub", "sub"},
+		{"relative", "/home/user/proj", "."},
+		{"relative", "/other/repo", "/other/repo"}, // escapes cwd → absolute
+		{"absolute", "/home/user/proj/sub", "/home/user/proj/sub"},
+	}
+	for _, tc := range tests {
+		activeWorktreePathFormat = tc.format
+		if got := FormatWorktreePath(tc.path, cwd); got != tc.want {
+			t.Errorf("FormatWorktreePath(%q, %q) [%s] = %q, want %q", tc.path, cwd, tc.format, got, tc.want)
+		}
+	}
+	activeWorktreePathFormat = "shortest" // restore
+}
+
+func TestHiddenSetHelpers(t *testing.T) {
+	set := toHiddenSet([]string{"branch", "", "date", "branch"})
+	if !set["branch"] || !set["date"] {
+		t.Errorf("toHiddenSet = %v, want branch+date present", set)
+	}
+	if len(set) != 2 {
+		t.Errorf("toHiddenSet = %v, want 2 unique entries (empty+dup dropped)", set)
+	}
+
+	list := hiddenToList(set)
+	if len(list) != 2 {
+		t.Errorf("hiddenToList = %v, want 2 entries", list)
+	}
+	for _, title := range list {
+		if !set[title] {
+			t.Errorf("hiddenToList = %v, entry %q missing from set", list, title)
+		}
+	}
 }

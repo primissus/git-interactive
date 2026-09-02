@@ -141,6 +141,19 @@ Commit staged changes: message input, then confirm.
 - **Amend** (`Shift+A`): amend the last commit (warn if the commit is already pushed).
 - **No-verify** (`Shift+V`): commit skipping hooks, also available directly as a shortcut.
 
+## Settings (`:settings` / `:menu`)
+
+Every interactive view opens a settings overlay via `:` → `settings` (alias `menu`). Toggled values preview live; `s` saves to `~/.config/gint/settings.json`, `esc` reverts.
+
+- **Generic sections** (every view): appearance (system/light/dark), date format (short/long/iso), and the theme list.
+- **Per-view Display sections** toggle which columns render:
+  - `branch`: branch, last commit, date, author, worktree.
+  - `log`: sha, message, date, author, branches, worktree.
+  - Hiding is TUI-only — `-I`/`--no-interactive` output always shows the full column set.
+- **Format rows**: `log`'s menu carries author (short/initials/full) and branch (full/short/ultra-short) format rows; `branch`'s menu carries a worktree-path row (shortest/relative/absolute). Other views keep the original format rows.
+- **Branch formats**: `full` (as-is), `short` (first rune of each leading segment, e.g. `d/d/name`), `ultra-short` (last segment with vowels stripped, e.g. `feat/auth/login-form` → `lgn-frm`).
+- **Worktree paths**: `shortest` (default: relative, else `~`-abbreviated, else absolute), `relative` (relative to cwd, falling back to absolute when it escapes), `absolute`.
+
 ## Architecture
 
 - **Language**: Go.

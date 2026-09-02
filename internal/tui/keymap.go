@@ -46,6 +46,8 @@ type Chrome struct {
 	SettingsDateFormat   string
 	SettingsBranchFormat string
 	SettingsAuthorFormat string
+	SettingsDisplay      string
+	SettingsWorktreePath string
 	SettingsTheme        string
 	SettingsFooter       string
 	SettingsSaved        string // has one %s verb (theme name)
@@ -90,6 +92,8 @@ func defaultChrome() Chrome {
 		SettingsDateFormat:   "Date",
 		SettingsBranchFormat: "Branch",
 		SettingsAuthorFormat: "Author",
+		SettingsDisplay:      "Display",
+		SettingsWorktreePath: "Worktree path",
 		SettingsTheme:        "Theme",
 		SettingsFooter:       "↑/↓ select · ←/→ toggle · enter select · s save · esc cancel",
 		SettingsSaved:        "theme saved: %s",
@@ -159,6 +163,8 @@ type chromeOverride struct {
 	SettingsDateFormat   *string `json:"settings_date_format"`
 	SettingsBranchFormat *string `json:"settings_branch_format"`
 	SettingsAuthorFormat *string `json:"settings_author_format"`
+	SettingsDisplay      *string `json:"settings_display"`
+	SettingsWorktreePath *string `json:"settings_worktree_path"`
 	SettingsTheme        *string `json:"settings_theme"`
 	SettingsFooter       *string `json:"settings_footer"`
 	SettingsSaved        *string `json:"settings_saved"`
@@ -257,6 +263,8 @@ func applyChromeOverride(c *Chrome, ov *chromeOverride) {
 	set(&c.SettingsDateFormat, ov.SettingsDateFormat)
 	set(&c.SettingsBranchFormat, ov.SettingsBranchFormat)
 	set(&c.SettingsAuthorFormat, ov.SettingsAuthorFormat)
+	set(&c.SettingsDisplay, ov.SettingsDisplay)
+	set(&c.SettingsWorktreePath, ov.SettingsWorktreePath)
 	set(&c.SettingsTheme, ov.SettingsTheme)
 	set(&c.SettingsFooter, ov.SettingsFooter)
 	set(&c.SettingsSaved, ov.SettingsSaved)

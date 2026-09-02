@@ -33,7 +33,7 @@ func (i worktreeItem) Columns() []string {
 		branch = "(detached)"
 	}
 	return []string{
-		shortestPath(i.w.Path, i.cwd),
+		tui.FormatWorktreePath(i.w.Path, i.cwd),
 		tui.FormatBranch(branch),
 		shortSHA(i.w.Head),
 		tui.FormatDate(i.unix, i.relDate),
@@ -51,21 +51,7 @@ func worktreeColumns() []tui.Column {
 	}
 }
 
-// shortestPath renders path relative to cwd, or "~"-abbreviated from the home
-// directory when that is shorter than the relative form (PLAN.md → worktree
-// "shortest path (relative, or ~-absolute)").
-func shortestPath(path, cwd string) string {
-	if rel, err := filepath.Rel(cwd, path); err == nil && !strings.HasPrefix(rel, "..") {
-		return rel
-	}
-	if home, err := os.UserHomeDir(); err == nil {
-		if rel, err := filepath.Rel(home, path); err == nil && !strings.HasPrefix(rel, "..") {
-			return filepath.Join("~", rel)
-		}
-	}
-	return path
-}
-
+// shortSHA truncates a full SHA to the 7-char short form.
 func shortSHA(sha string) string {
 	if len(sha) > 7 {
 		return sha[:7]

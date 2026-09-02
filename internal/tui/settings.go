@@ -17,10 +17,18 @@ type Settings struct {
 
 	// DateFormat is one of "short", "long", "iso" or "" (→ "short").
 	DateFormat string `json:"dateFormat,omitempty"`
-	// BranchFormat is one of "full", "short" or "" (→ "full").
+	// BranchFormat is one of "full", "short", "ultra-short" or "" (→ "full").
 	BranchFormat string `json:"branchFormat,omitempty"`
 	// AuthorFormat is one of "short", "initials", "full" or "" (→ "short").
 	AuthorFormat string `json:"authorFormat,omitempty"`
+
+	// WorktreePathFormat is one of "shortest", "relative", "absolute" or ""
+	// (→ "shortest"). Applies to the branch and log views' worktree columns.
+	WorktreePathFormat string `json:"worktreePathFormat,omitempty"`
+	// BranchHiddenColumns / LogHiddenColumns are the column titles hidden via
+	// the branch / log settings overlays. TUI-only — `-I` output ignores them.
+	BranchHiddenColumns []string `json:"branchHiddenColumns,omitempty"`
+	LogHiddenColumns    []string `json:"logHiddenColumns,omitempty"`
 }
 
 // settingsPath resolves ~/.config/gint/settings.json, honoring $XDG_CONFIG_HOME
@@ -90,7 +98,7 @@ func LoadSettings() (*Settings, error) {
 		s.DateFormat = "short"
 	}
 	switch s.BranchFormat {
-	case "full", "short":
+	case "full", "short", "ultra-short":
 	default:
 		s.BranchFormat = "full"
 	}
@@ -98,6 +106,11 @@ func LoadSettings() (*Settings, error) {
 	case "short", "initials", "full":
 	default:
 		s.AuthorFormat = "short"
+	}
+	switch s.WorktreePathFormat {
+	case "shortest", "relative", "absolute":
+	default:
+		s.WorktreePathFormat = "shortest"
 	}
 
 	return &s, nil
@@ -160,10 +173,25 @@ func CurrentSettings() *Settings {
 		theme = "default"
 	}
 	return &Settings{
-		Appearance:   appearance,
-		Theme:        theme,
-		DateFormat:   activeDateFormat,
-		BranchFormat: activeBranchFormat,
-		AuthorFormat: activeAuthorFormat,
+		Appearance:          appearance,
+		Theme:               theme,
+		DateFormat:          activeDateFormat,
+		BranchFormat:        activeBranchFormat,
+		AuthorFormat:        activeAuthorFormat,
+		WorktreePathFormat:  activeWorktreePathFormat,
+		BranchHiddenColumns: hiddenToList(activeBranchHidden),
+		LogHiddenColumns:    hiddenToList(activeLogHidden),
 	}
+}
+
+// hiddenToList converts a hidden-column lookup map back into the persisted
+// slice form (insertion order is not preserved; callers sort if they care).
+func hiddenToList(set map[string]bool) []string {
+	out := make([]string, 0, len(set))
+	for title, hidden := range set {
+		if hidden {
+			out = append(out, title)
+		}
+	}
+	return out
 }

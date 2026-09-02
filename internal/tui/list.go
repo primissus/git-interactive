@@ -30,10 +30,16 @@ const (
 // "Shared interaction model".
 type List struct {
 	title   string
-	columns []Column
+	columns []Column // always the FULL set — Item.Columns() cells index into it positionally
 	items   []Item
-	density Density
-	sort    string // -S hint; applied by the command, surfaced here for display
+	// hiddenColumns returns the live set of hidden column titles (per-view
+	// settings). Evaluated every frame by visibleColumns so overlay toggles
+	// preview live. Hiding must NOT filter l.columns itself: columnIndex maps
+	// visible columns back to positions in the full set, and a filtered set
+	// would desync cells from headers.
+	hiddenColumns func() map[string]bool
+	density       Density
+	sort          string // -S hint; applied by the command, surfaced here for display
 
 	visible []int // item indices after the active search filter, in match order
 	cursor  int   // index into visible
@@ -52,10 +58,12 @@ type List struct {
 	menu     menuModel
 	confirm  confirmModel
 	input    inputModel
-	settings settingsModel
+	settings *settingsModel
 	pending  *pending  // operation awaiting input/confirmation
 	batch    *batchRun // in-flight resilient bulk operation
 	countBuf string    // digits typed as a motion count prefix (e.g. "10" in 10j)
+
+	view string // owning command view: "" | "branch" | "log" — drives settings sections
 
 	styles        Styles
 	status        string
@@ -93,6 +101,15 @@ type Config struct {
 	// mode. OpenMenu pre-fills its fuzzy operation filter (usually "").
 	OpenMenuOnStart bool
 	OpenMenu        string
+	// HiddenColumns returns the live set of column titles to hide in the
+	// interactive view (per-view settings toggles). It is re-evaluated on every
+	// render, so the settings overlay's toggles preview live; nil hides
+	// nothing. -I/RenderTable output is unaffected — it always receives the
+	// full column set.
+	HiddenColumns func() map[string]bool
+	// View names the owning command view ("branch", "log", …), driving which
+	// sections the settings overlay shows. "" = generic view.
+	View string
 }
 
 // New builds a List from cfg.
@@ -110,6 +127,7 @@ func New(cfg Config) *List {
 		title:         cfg.Title,
 		columns:       cfg.Columns,
 		items:         cfg.Items,
+		hiddenColumns: cfg.HiddenColumns,
 		density:       cfg.Density,
 		sort:          cfg.Sort,
 		ops:           cfg.Operations,
@@ -121,6 +139,7 @@ func New(cfg Config) *List {
 		styles:        styles,
 		openMenu:      cfg.OpenMenu,
 		openMenuStart: cfg.OpenMenuOnStart,
+		view:          cfg.View,
 		width:         80,
 		height:        24,
 	}
@@ -676,9 +695,11 @@ func (l *List) updateMenu(msg tea.Msg) tea.Cmd {
 // openSettings constructs the settings overlay on top of the current list. The
 // overlay keeps a pointer to l.styles so its live preview (and esc revert) can
 // regenerate them in place — the list repaints immediately when the user
-// toggles appearance or selects a different theme.
+// toggles appearance or selects a different theme. It also receives the list's
+// view name (driving which sections show) and its column-refresh hook (driving
+// live hidden-column toggles).
 func (l *List) openSettings() tea.Cmd {
-	l.settings = newSettingsModel(&l.styles)
+	l.settings = newSettingsModel(l, l.view)
 	l.mode = modeSettings
 	return nil
 }
@@ -774,13 +795,19 @@ func clamp(v, lo, hi int) int {
 	return v
 }
 
-// visibleColumns returns the columns shown at the current density.
+// visibleColumns returns the columns shown at the current density, minus any
+// the per-view settings hide. The full l.columns set is never mutated — cells
+// are indexed positionally against it.
 func (l *List) visibleColumns() []Column {
 	var out []Column
 	for _, c := range l.columns {
-		if c.visible(l.density) {
-			out = append(out, c)
+		if !c.visible(l.density) {
+			continue
 		}
+		if l.hiddenColumns != nil && l.hiddenColumns()[c.Title] {
+			continue
+		}
+		out = append(out, c)
 	}
 	return out
 }

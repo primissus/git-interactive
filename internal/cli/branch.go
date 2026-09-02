@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 	"time"
@@ -22,11 +23,13 @@ var copyToClipboard = clipboard.WriteAll
 
 // branchItem adapts a git.Branch to tui.Item. Column order follows the
 // git-br.py reference (and phase 1's -I output): name, last commit subject,
-// relative date, author.
+// relative date, author, worktree.
 type branchItem struct {
 	b           git.Branch
 	merged      bool
 	displayName string // leaf segment + indent when tree view is active
+	wtPath      string // absolute path of the worktree holding this branch ("" = none)
+	cwd         string // process cwd, for live worktree-path formatting
 }
 
 func (i branchItem) Columns() []string {
@@ -36,7 +39,7 @@ func (i branchItem) Columns() []string {
 	} else {
 		name = tui.FormatBranch(name)
 	}
-	return []string{name, i.b.Subject, tui.FormatDate(i.b.CommitUnix, i.b.CommitDate), tui.FormatAuthor(i.b.AuthorName)}
+	return []string{name, i.b.Subject, tui.FormatDate(i.b.CommitUnix, i.b.CommitDate), tui.FormatAuthor(i.b.AuthorName), tui.FormatWorktreePath(i.wtPath, i.cwd)}
 }
 func (i branchItem) FilterValue() string { return i.b.Name }
 func (i branchItem) Current() bool       { return i.b.Head }
@@ -49,7 +52,7 @@ func (i branchItem) Current() bool       { return i.b.Head }
 // placeholder row) and goes straight to the name prompt.
 type createBranchItem struct{}
 
-func (createBranchItem) Columns() []string   { return []string{"+ new branch (Shift+N)", "", "", ""} }
+func (createBranchItem) Columns() []string   { return []string{"+ new branch (Shift+N)", "", "", "", ""} }
 func (createBranchItem) FilterValue() string { return "" }
 func (createBranchItem) Current() bool       { return false }
 func (createBranchItem) DefaultOp() string   { return "new" }
@@ -59,7 +62,10 @@ func branchColumns() []tui.Column {
 		{Title: "branch", MinWidth: 12, Flex: true, Density: tui.DensityShort, Color: tui.ColorName},
 		{Title: "last commit", MaxWidth: 50, Flex: true, Density: tui.DensityNormal},
 		{Title: "date", MinWidth: 7, Density: tui.DensityNormal, Color: tui.ColorDate},
-		{Title: "author", MinWidth: 10, Density: tui.DensityFull, Color: tui.ColorAuthor},
+		{Title: "author", MinWidth: 10, Density: tui.DensityNormal, Color: tui.ColorAuthor},
+		// Worktree column: visible in the default and -F views, hidden in -s
+		// (DensityNormal), matching the intent of "visible in default and -F".
+		{Title: "worktree", MinWidth: 8, Density: tui.DensityNormal, Color: tui.ColorDate},
 	}
 }
 
@@ -179,7 +185,10 @@ func sortBranches(branches []git.Branch, mode string) {
 
 // loadBranchItems fetches, filters, and sorts branches, and adapts them to
 // tui.Items; includeCreateRow pins the create-branch row at index 0 (used for
-// the interactive list, not for -I output or direct-menu mode).
+// the interactive list, not for -I output or direct-menu mode). Each row's
+// worktree cell comes from the git worktree list map (raw absolute paths,
+// formatted at render time), which covers the main worktree — %(worktreepath)
+// alone is empty there.
 func loadBranchItems(ctx context.Context, r *git.Runner, f branchFilters, sortMode string, includeCreateRow bool) ([]tui.Item, error) {
 	branches, err := git.ListBranches(ctx, r)
 	if err != nil {
@@ -189,6 +198,14 @@ func loadBranchItems(ctx context.Context, r *git.Runner, f branchFilters, sortMo
 	if err != nil {
 		return nil, err
 	}
+	branchWT, err := worktreeByBranch(ctx, r)
+	if err != nil {
+		return nil, err
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		cwd = "."
+	}
 	branches = filterBranches(branches, f, merged)
 	sortBranches(branches, sortMode)
 
@@ -197,7 +214,7 @@ func loadBranchItems(ctx context.Context, r *git.Runner, f branchFilters, sortMo
 		items = append(items, createBranchItem{})
 	}
 	for _, b := range branches {
-		items = append(items, branchItem{b: b, merged: merged[b.Name]})
+		items = append(items, branchItem{b: b, merged: merged[b.Name], wtPath: branchWT[b.Name], cwd: cwd})
 	}
 	return items, nil
 }
@@ -328,6 +345,10 @@ func runBranch(cmd *cobra.Command, args []string) error {
 			Density:       densityFromFlags(flags),
 			Sort:          state.sortLabel(),
 			InitialCursor: 1, // focus stays on the first real branch, past the create row
+			View:          "branch",
+			// Live hidden-column set from the :settings overlay. The List
+			// re-reads it per frame; -I output keeps the full column set.
+			HiddenColumns: tui.ActiveBranchHidden,
 		})
 		p := tea.NewProgram(list, tea.WithAltScreen(), tea.WithContext(ctx))
 		if _, err := p.Run(); err != nil {

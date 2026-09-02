@@ -20,20 +20,66 @@ const (
 // shown on the appearance row. "system" leads because it's the no-config default.
 var appearances = []string{"system", "light", "dark"}
 
-// dateFormats, branchFormats, authorFormats are the cycle orders for the
-// display-format toggle rows.
+// dateFormats, branchFormats, authorFormats, worktreePathFormats are the cycle
+// orders for the display-format toggle rows.
 var dateFormats = []string{"short", "long", "iso"}
 
-var branchFormats = []string{"full", "short"}
+var branchFormats = []string{"full", "short", "ultra-short"}
 
 var authorFormats = []string{"short", "initials", "full"}
 
-// settingsModel is the `:settings` overlay: an Appearance toggle
-// (System/Light/Dark), Date/Branch/Author format toggle rows, plus a
-// scrollable theme list with live color swatches. Changes preview live — every
-// cursor move or toggle fires setPalette + refreshes the owning List's *Styles,
-// so the list behind the overlay repaints immediately. Esc reverts to the
-// pre-overlay state; s saves to disk and applies.
+var worktreePathFormats = []string{"shortest", "relative", "absolute"}
+
+// branchColumnTitles / logColumnTitles are the column titles the branch and
+// log views' Display sections can hide, in column order. They must match the
+// Column.Title values the commands build, since hiding filters by title.
+var branchColumnTitles = []string{"branch", "last commit", "date", "author", "worktree"}
+
+var logColumnTitles = []string{"sha", "message", "date", "author", "branches", "worktree"}
+
+// settingsRowKind classifies a selectable settings row.
+type settingsRowKind int
+
+const (
+	settingsRowCycle  settingsRowKind = iota // ←/→ (and enter) cycle options
+	settingsRowToggle                        // enter/space flips a bool
+	settingsRowTheme                         // enter selects the theme
+)
+
+// settingsRow is one selectable row in the settings overlay. section is a
+// chrome key ("Appearance", "Date", "Branch", "Author", "Display",
+// "WorktreePath", "Theme", …) labeling a header rendered above the first row
+// that introduces it; rows that share a section render under that one header.
+type settingsRow struct {
+	kind    settingsRowKind
+	section string
+
+	// cycle rows (settingsRowCycle):
+	options []string
+	get     func() string
+	set     func(string)
+	label   func(string) string
+	// appearanceRow marks the appearance cycle row so its "resolved: …" hint
+	// can render under the section header (system mode only).
+	appearanceRow bool
+
+	// toggle rows (settingsRowToggle):
+	toggleTitle string
+	hidden      func() bool
+	setHidden   func(bool)
+
+	// theme rows (settingsRowTheme):
+	themeIndex int
+}
+
+// settingsModel is the `:settings` overlay. It is view-aware: the generic
+// sections (appearance, date format, themes) appear in every view; the branch
+// view adds a Display column-toggle section + a worktree-path format row, and
+// the log view adds a Display section + author/branch format rows. Changes
+// preview live — every cursor move or toggle re-runs setPalette, refreshes the
+// owning List's *Styles, and re-filters its columns, so the list behind the
+// overlay repaints immediately. Esc reverts to the pre-overlay state; s saves
+// to disk and applies.
 type settingsModel struct {
 	styles *Styles // ref to the owning List's styles — regenerated on preview
 
@@ -49,17 +95,30 @@ type settingsModel struct {
 	origBranchFormat string
 	origAuthorFormat string
 
-	cursor int // 0 = appearance, 1 = date, 2 = branch, 3 = author, 4+ = themes
+	worktreePathFormat     string // current preview worktree-path format
+	origWorktreePathFormat string // snapshot for revert on esc
+
+	// Hidden-column toggles mutate the active package maps directly; the
+	// owning List re-reads them via its HiddenColumns predicate on every
+	// render, so toggles preview live. These are the pre-overlay snapshots
+	// restored by Esc.
+	origBranchHidden map[string]bool
+	origLogHidden    map[string]bool
+
+	rows   []settingsRow
+	cursor int
 	state  settingsState
 
 	saveErr error // surfaced via saveFailedMsg if SaveSettings failed
 }
 
-// newSettingsModel builds the overlay, snapshotting the current active state
-// so Esc can restore it bit-for-bit.
-func newSettingsModel(styles *Styles) settingsModel {
-	s := settingsModel{
-		styles:         styles,
+// newSettingsModel builds the overlay for the given view, snapshotting the
+// current active state so Esc can restore it bit-for-bit. It returns a pointer:
+// the row closures read/write fields through it, so the overlay instance stored
+// on the List is exactly the one the closures see.
+func newSettingsModel(l *List, view string) *settingsModel {
+	s := &settingsModel{
+		styles:         &l.styles,
 		appearance:     ActiveAppearance,
 		activeTheme:    ActiveTheme.Name,
 		origAppearance: ActiveAppearance,
@@ -71,6 +130,14 @@ func newSettingsModel(styles *Styles) settingsModel {
 		origDateFormat:   activeDateFormat,
 		origBranchFormat: activeBranchFormat,
 		origAuthorFormat: activeAuthorFormat,
+
+		worktreePathFormat:     activeWorktreePathFormat,
+		origWorktreePathFormat: activeWorktreePathFormat,
+
+		origBranchHidden: cloneHidden(activeBranchHidden),
+		origLogHidden:    cloneHidden(activeLogHidden),
+
+		cursor: 0,
 	}
 	if s.appearance == "" {
 		s.appearance = "system"
@@ -80,12 +147,81 @@ func newSettingsModel(styles *Styles) settingsModel {
 		s.activeTheme = "default"
 		s.origTheme = "default"
 	}
-	s.cursor = 0
+	s.rows = s.buildRows(view)
 	return s
 }
 
-// lastCursor returns the maximum valid cursor index.
-func (m *settingsModel) lastCursor() int { return 3 + len(themes) }
+// buildRows assembles the overlay's row list for a view. The generic rows
+// (appearance, date format) lead in every view; branch and log add their own
+// Display/format sections between date and the theme list.
+func (m *settingsModel) buildRows(view string) []settingsRow {
+	var rows []settingsRow
+
+	addCycle := func(section string, opts []string, get func() string, set func(string), label func(string) string) {
+		if label == nil {
+			label = labelForFormatOption
+		}
+		rows = append(rows, settingsRow{kind: settingsRowCycle, section: section, options: opts, get: get, set: set, label: label})
+	}
+	addToggle := func(section, title string, hidden func() bool, setHidden func(bool)) {
+		rows = append(rows, settingsRow{kind: settingsRowToggle, section: section, toggleTitle: title, hidden: hidden, setHidden: setHidden})
+	}
+
+	appearanceRow := settingsRow{
+		kind: settingsRowCycle, section: "Appearance", options: appearances,
+		get:   func() string { return m.appearance },
+		set:   func(v string) { m.appearance = v },
+		label: labelForAppearance, appearanceRow: true,
+	}
+	rows = append(rows, appearanceRow)
+	addCycle("Date", dateFormats, func() string { return m.dateFormat }, func(v string) { m.dateFormat = v }, labelForFormatOption)
+
+	switch view {
+	case "branch":
+		for _, title := range branchColumnTitles {
+			addToggle("Display", title,
+				func() bool { return activeBranchHidden[title] },
+				func(v bool) { setHiddenVal(activeBranchHidden, title, v) })
+		}
+		addCycle("WorktreePath", worktreePathFormats,
+			func() string { return m.worktreePathFormat },
+			func(v string) { m.worktreePathFormat = v }, labelForFormatOption)
+	case "log":
+		for _, title := range logColumnTitles {
+			addToggle("Display", title,
+				func() bool { return activeLogHidden[title] },
+				func(v bool) { setHiddenVal(activeLogHidden, title, v) })
+		}
+		addCycle("Author", authorFormats, func() string { return m.authorFormat }, func(v string) { m.authorFormat = v }, labelForFormatOption)
+		addCycle("Branch", branchFormats, func() string { return m.branchFormat }, func(v string) { m.branchFormat = v }, labelForFormatOption)
+	default:
+		addCycle("Branch", branchFormats, func() string { return m.branchFormat }, func(v string) { m.branchFormat = v }, labelForFormatOption)
+		addCycle("Author", authorFormats, func() string { return m.authorFormat }, func(v string) { m.authorFormat = v }, labelForFormatOption)
+	}
+
+	for i := range themes {
+		rows = append(rows, settingsRow{kind: settingsRowTheme, section: "Theme", themeIndex: i})
+	}
+	return rows
+}
+
+// cloneHidden snapshots a hidden-column set so Esc can restore it.
+func cloneHidden(set map[string]bool) map[string]bool {
+	out := make(map[string]bool, len(set))
+	for k, v := range set {
+		out[k] = v
+	}
+	return out
+}
+
+// setHiddenVal flips one title in a hidden-column set.
+func setHiddenVal(set map[string]bool, title string, hidden bool) {
+	if hidden {
+		set[title] = true
+	} else {
+		delete(set, title)
+	}
+}
 
 // Update advances the overlay. Returns nil (no commands).
 func (m *settingsModel) Update(msg tea.Msg) tea.Cmd {
@@ -104,37 +240,26 @@ func (m *settingsModel) Update(msg tea.Msg) tea.Cmd {
 		}
 		return nil
 	case "down", "j":
-		if m.cursor < m.lastCursor() {
+		if m.cursor < len(m.rows)-1 {
 			m.cursor++
 		}
 		return nil
 	case "left", "h":
-		m.cycleCurrent(-1)
-		return nil
+		return m.activate(m.cursor, -1)
 	case "right", "l":
-		m.cycleCurrent(1)
-		return nil
-	case "enter":
-		if m.cursor == 0 {
-			m.cycleCurrent(1)
-		} else if m.cursor >= 4 {
-			themeIdx := m.cursor - 4
-			if themeIdx >= 0 && themeIdx < len(themes) {
-				m.activeTheme = themes[themeIdx].Name
-				m.preview()
-			}
-		} else {
-			// date/branch/author: enter also cycles
-			m.cycleCurrent(1)
-		}
-		return nil
+		return m.activate(m.cursor, 1)
+	case "enter", " ":
+		return m.activate(m.cursor, 1)
 	case "s":
 		m.saveErr = SaveSettings(&Settings{
-			Appearance:   m.appearance,
-			Theme:        m.activeTheme,
-			DateFormat:   m.dateFormat,
-			BranchFormat: m.branchFormat,
-			AuthorFormat: m.authorFormat,
+			Appearance:          m.appearance,
+			Theme:               m.activeTheme,
+			DateFormat:          m.dateFormat,
+			BranchFormat:        m.branchFormat,
+			AuthorFormat:        m.authorFormat,
+			WorktreePathFormat:  m.worktreePathFormat,
+			BranchHiddenColumns: hiddenToList(activeBranchHidden),
+			LogHiddenColumns:    hiddenToList(activeLogHidden),
 		})
 		m.state = settingsApplied
 		return nil
@@ -142,29 +267,30 @@ func (m *settingsModel) Update(msg tea.Msg) tea.Cmd {
 	return nil
 }
 
-// cycleCurrent advances the value at the current cursor row by dir (±1).
-func (m *settingsModel) cycleCurrent(dir int) {
-	var changed bool
-	switch m.cursor {
-	case 0:
-		changed = m.cycleOption(&m.appearance, appearances, dir)
-	case 1:
-		changed = m.cycleOption(&m.dateFormat, dateFormats, dir)
-	case 2:
-		changed = m.cycleOption(&m.branchFormat, branchFormats, dir)
-	case 3:
-		changed = m.cycleOption(&m.authorFormat, authorFormats, dir)
-	}
-	if changed {
+// activate drives the row at cursor in direction dir: cycle rows cycle their
+// options, toggle rows flip their bool (direction-agnostic), theme rows select
+// the theme.
+func (m *settingsModel) activate(rowIdx, dir int) tea.Cmd {
+	row := m.rows[rowIdx]
+	switch row.kind {
+	case settingsRowCycle:
+		m.cycleRow(row, dir)
+	case settingsRowToggle:
+		row.setHidden(!row.hidden())
+		m.preview()
+	case settingsRowTheme:
+		m.activeTheme = themes[row.themeIndex].Name
 		m.preview()
 	}
+	return nil
 }
 
-// cycleOption cycles *value through options by dir, returning true if changed.
-func (m *settingsModel) cycleOption(value *string, options []string, dir int) bool {
+// cycleRow advances a cycle row's option by dir, previewing on change.
+func (m *settingsModel) cycleRow(row settingsRow, dir int) {
+	old := row.get()
 	idx := -1
-	for i, o := range options {
-		if o == *value {
+	for i, o := range row.options {
+		if o == old {
 			idx = i
 			break
 		}
@@ -172,19 +298,22 @@ func (m *settingsModel) cycleOption(value *string, options []string, dir int) bo
 	if idx < 0 {
 		idx = 0
 	}
-	n := len(options)
-	old := *value
-	*value = options[(idx+dir+n)%n]
-	return *value != old
+	row.set(row.options[(idx+dir+len(row.options))%len(row.options)])
+	if row.get() != old {
+		m.preview()
+	}
 }
 
-// preview refreshes the global palette + format vars + the owning List's Styles
-// so the list behind the overlay repaints instantly.
+// preview refreshes the global palette + format vars and the owning List's
+// Styles so the list behind the overlay repaints instantly. Hidden-column
+// toggles need no extra hook here: they mutate the active maps, which the
+// List's HiddenColumns predicate re-reads on every render.
 func (m *settingsModel) preview() {
 	setPalette(m.activeTheme, m.appearance)
 	activeDateFormat = m.dateFormat
 	activeBranchFormat = m.branchFormat
 	activeAuthorFormat = m.authorFormat
+	activeWorktreePathFormat = m.worktreePathFormat
 	if m.styles != nil {
 		*m.styles = StylesFromColors()
 	}
@@ -192,69 +321,79 @@ func (m *settingsModel) preview() {
 
 // revert restores the snapshot state taken at construction. Called on Esc.
 func (m *settingsModel) revert() {
+	m.appearance = m.origAppearance
+	m.activeTheme = m.origTheme
+	m.dateFormat = m.origDateFormat
+	m.branchFormat = m.origBranchFormat
+	m.authorFormat = m.origAuthorFormat
+	m.worktreePathFormat = m.origWorktreePathFormat
+
 	setPalette(m.origTheme, m.origAppearance)
 	activeDateFormat = m.origDateFormat
 	activeBranchFormat = m.origBranchFormat
 	activeAuthorFormat = m.origAuthorFormat
+	activeWorktreePathFormat = m.origWorktreePathFormat
+	activeBranchHidden = cloneHidden(m.origBranchHidden)
+	activeLogHidden = cloneHidden(m.origLogHidden)
 	if m.styles != nil {
 		*m.styles = StylesFromColors()
 	}
 }
 
-// settingsNumRows is the number of non-theme rows in the settings view.
-const settingsNumRows = 4
-
-// View renders the settings overlay.
+// View renders the settings overlay: each section header followed by its rows,
+// with the cursor row highlighted.
 func (m settingsModel) View() string {
 	chrome := chromeSettings()
+	sectionLabel := map[string]string{
+		"Appearance":   chrome.Appearance,
+		"Date":         chrome.DateFormat,
+		"Branch":       chrome.BranchFormat,
+		"Author":       chrome.AuthorFormat,
+		"Display":      chrome.Display,
+		"WorktreePath": chrome.WorktreePath,
+		"Theme":        chrome.Theme,
+	}
 	var b strings.Builder
 
 	b.WriteString(m.styles.SettingsTitle.Render(chrome.Title))
 	b.WriteByte('\n')
 	b.WriteByte('\n')
 
-	// Appearance row.
-	b.WriteString(m.styles.SettingsSection.Render(chrome.Appearance))
-	resolved := ActiveResolvedAppearance
-	if m.appearance == "system" && resolved != "" {
-		b.WriteString(m.styles.SettingsHelp.Render("  (resolved: " + resolved + ")"))
-	}
-	b.WriteByte('\n')
-	m.renderToggleRow(&b, m.cursor == 0, m.renderAppearanceRow, m.renderAppearanceRowDim)
-	b.WriteByte('\n')
-	b.WriteByte('\n')
+	section := ""
+	for i, row := range m.rows {
+		if row.section != "" && row.section != section {
+			// Blank line only where the original layout had one: after the
+			// appearance section and before the theme list. Format rows and
+			// display toggles stay tightly grouped so the overlay fits short
+			// terminals.
+			if prev := section; prev != "" && (prev == "Appearance" || row.section == "Theme") {
+				b.WriteByte('\n')
+			}
+			b.WriteString(m.styles.SettingsSection.Render(sectionLabel[row.section]))
+			b.WriteByte('\n')
+			section = row.section
+		}
+		if row.appearanceRow && m.appearance == "system" && ActiveResolvedAppearance != "" {
+			b.WriteString(m.styles.SettingsHelp.Render("  (resolved: " + ActiveResolvedAppearance + ")"))
+			b.WriteByte('\n')
+		}
 
-	// Date format row.
-	b.WriteString(m.styles.SettingsSection.Render(chrome.DateFormat))
-	b.WriteByte('\n')
-	m.renderToggleRow(&b, m.cursor == 1, func() string { return m.renderOptions(dateFormats, m.dateFormat) },
-		func() string { return m.renderOptionsDim(dateFormats, m.dateFormat) })
-	b.WriteByte('\n')
-
-	// Branch format row.
-	b.WriteString(m.styles.SettingsSection.Render(chrome.BranchFormat))
-	b.WriteByte('\n')
-	m.renderToggleRow(&b, m.cursor == 2, func() string { return m.renderOptions(branchFormats, m.branchFormat) },
-		func() string { return m.renderOptionsDim(branchFormats, m.branchFormat) })
-	b.WriteByte('\n')
-
-	// Author format row.
-	b.WriteString(m.styles.SettingsSection.Render(chrome.AuthorFormat))
-	b.WriteByte('\n')
-	m.renderToggleRow(&b, m.cursor == 3, func() string { return m.renderOptions(authorFormats, m.authorFormat) },
-		func() string { return m.renderOptionsDim(authorFormats, m.authorFormat) })
-	b.WriteByte('\n')
-	b.WriteByte('\n')
-
-	// Theme rows.
-	b.WriteString(m.styles.SettingsSection.Render(chrome.Theme))
-	b.WriteByte('\n')
-	for i, t := range themes {
-		row := t.Name
-		if i == m.cursor-settingsNumRows {
-			b.WriteString(m.styles.SettingsRowActive.Render(m.formatThemeRow(row, true)))
-		} else {
-			b.WriteString(m.styles.SettingsRow.Render(m.formatThemeRow(row, false)))
+		active := i == m.cursor
+		switch row.kind {
+		case settingsRowCycle:
+			if active {
+				b.WriteString(m.renderOptions(row))
+			} else {
+				b.WriteString(m.renderOptionsDim(row))
+			}
+		case settingsRowToggle:
+			b.WriteString(m.renderToggle(row, active))
+		case settingsRowTheme:
+			if active {
+				b.WriteString(m.styles.SettingsRowActive.Render(m.formatThemeRow(row.themeIndex)))
+			} else {
+				b.WriteString(m.styles.SettingsRow.Render(m.formatThemeRow(row.themeIndex)))
+			}
 		}
 		b.WriteByte('\n')
 	}
@@ -264,72 +403,47 @@ func (m settingsModel) View() string {
 	return m.styles.Overlay.Render(b.String())
 }
 
-// renderToggleRow calls activeRender or dimRender depending on whether this
-// row is the cursor target.
-func (m settingsModel) renderToggleRow(b *strings.Builder, active bool, activeRender, dimRender func() string) {
+// renderOptions renders a cycle row: [◉ optA] [○ optB] [○ optC] with the
+// active option highlighted when the row is the cursor target.
+func (m settingsModel) renderOptions(row settingsRow) string {
+	parts := make([]string, len(row.options))
+	for i, o := range row.options {
+		marker := "○"
+		style := m.styles.SettingsOptionOff
+		if o == row.get() {
+			marker = "◉"
+			style = m.styles.SettingsOptionOn
+		}
+		parts[i] = style.Render(marker + " " + row.label(o))
+	}
+	return lipgloss.JoinHorizontal(lipgloss.Top, parts...)
+}
+
+// renderOptionsDim is the same row but every option de-emphasized.
+func (m settingsModel) renderOptionsDim(row settingsRow) string {
+	parts := make([]string, len(row.options))
+	for i, o := range row.options {
+		marker := "○"
+		if o == row.get() {
+			marker = "◉"
+		}
+		parts[i] = m.styles.SettingsOptionOff.Render(marker + " " + row.label(o))
+	}
+	return lipgloss.JoinHorizontal(lipgloss.Top, parts...)
+}
+
+// renderToggle renders a Display toggle row: "[x] <column>" when the column is
+// shown, "[ ] <column>" when hidden. The cursor row is highlighted.
+func (m settingsModel) renderToggle(row settingsRow, active bool) string {
+	marker := "x"
+	if row.hidden() {
+		marker = " "
+	}
+	text := "[" + marker + "] " + row.toggleTitle
 	if active {
-		b.WriteString(activeRender())
-	} else {
-		b.WriteString(dimRender())
+		return m.styles.SettingsRowActive.Render(text)
 	}
-}
-
-// renderAppearanceRow shows [◉ System] [○ Light] [○ Dark] with the active
-// option highlighted.
-func (m settingsModel) renderAppearanceRow() string {
-	parts := make([]string, len(appearances))
-	for i, a := range appearances {
-		marker := "○"
-		style := m.styles.SettingsOptionOff
-		if a == m.appearance {
-			marker = "◉"
-			style = m.styles.SettingsOptionOn
-		}
-		parts[i] = style.Render(marker + " " + labelForAppearance(a))
-	}
-	return lipgloss.JoinHorizontal(lipgloss.Top, parts...)
-}
-
-// renderAppearanceRowDim is the appearance row shown when cursor is elsewhere.
-func (m settingsModel) renderAppearanceRowDim() string {
-	parts := make([]string, len(appearances))
-	for i, a := range appearances {
-		marker := "○"
-		if a == m.appearance {
-			marker = "◉"
-		}
-		parts[i] = m.styles.SettingsOptionOff.Render(marker + " " + labelForAppearance(a))
-	}
-	return lipgloss.JoinHorizontal(lipgloss.Top, parts...)
-}
-
-// renderOptions renders a generic toggle row: [◉ optA] [○ optB] [○ optC] with
-// the active option highlighted. Used by date, branch, author rows.
-func (m settingsModel) renderOptions(opts []string, current string) string {
-	parts := make([]string, len(opts))
-	for i, o := range opts {
-		marker := "○"
-		style := m.styles.SettingsOptionOff
-		if o == current {
-			marker = "◉"
-			style = m.styles.SettingsOptionOn
-		}
-		parts[i] = style.Render(marker + " " + labelForFormatOption(o))
-	}
-	return lipgloss.JoinHorizontal(lipgloss.Top, parts...)
-}
-
-// renderOptionsDim is the same row but all options de-emphasized.
-func (m settingsModel) renderOptionsDim(opts []string, current string) string {
-	parts := make([]string, len(opts))
-	for i, o := range opts {
-		marker := "○"
-		if o == current {
-			marker = "◉"
-		}
-		parts[i] = m.styles.SettingsOptionOff.Render(marker + " " + labelForFormatOption(o))
-	}
-	return lipgloss.JoinHorizontal(lipgloss.Top, parts...)
+	return m.styles.SettingsRow.Render(text)
 }
 
 // labelForFormatOption returns a display label for a format option value.
@@ -345,12 +459,21 @@ func labelForFormatOption(o string) string {
 		return "Full"
 	case "initials":
 		return "Initials"
+	case "ultra-short":
+		return "Ultra-short"
+	case "shortest":
+		return "Shortest"
+	case "relative":
+		return "Relative"
+	case "absolute":
+		return "Absolute"
 	}
 	return o
 }
 
 // formatThemeRow builds one theme row: marker + name + swatches.
-func (m settingsModel) formatThemeRow(name string, active bool) string {
+func (m settingsModel) formatThemeRow(idx int) string {
+	name := themes[idx].Name
 	nameW := 0
 	for _, th := range themes {
 		if len(th.Name) > nameW {
@@ -358,7 +481,7 @@ func (m settingsModel) formatThemeRow(name string, active bool) string {
 		}
 	}
 	marker := "  "
-	if active {
+	if themes[idx].Name == m.activeTheme {
 		marker = "▸ "
 	}
 	nameStr := marker + name + strings.Repeat(" ", nameW-len(name)+3)
@@ -394,6 +517,8 @@ func chromeSettings() settingsChrome {
 		DateFormat:   orStr(c.SettingsDateFormat, "Date"),
 		BranchFormat: orStr(c.SettingsBranchFormat, "Branch"),
 		AuthorFormat: orStr(c.SettingsAuthorFormat, "Author"),
+		Display:      orStr(c.SettingsDisplay, "Display"),
+		WorktreePath: orStr(c.SettingsWorktreePath, "Worktree path"),
 		Theme:        orStr(c.SettingsTheme, "Theme"),
 		Footer: orStr(c.SettingsFooter,
 			"↑/↓ select · ←/→ toggle · enter select · s save · esc cancel"),
@@ -407,6 +532,8 @@ type settingsChrome struct {
 	DateFormat   string
 	BranchFormat string
 	AuthorFormat string
+	Display      string
+	WorktreePath string
 	Theme        string
 	Footer       string
 }
