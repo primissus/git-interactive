@@ -47,6 +47,10 @@ type Operation struct {
 	// Confirm, when non-nil, gates the operation behind a confirmation flow.
 	// The chosen value (for multi-choice) arrives in OpContext.Choice.
 	Confirm *Confirm
+	// ConfirmFrom, when non-nil, resolves the confirmation from the operation's
+	// target items at invocation time; returning nil runs the operation with no
+	// prompt. It overrides Confirm.
+	ConfirmFrom func([]Item) *Confirm
 	// Batch, when non-nil, runs the operation over its target items one at a
 	// time with per-failure recovery (see BatchSpec), instead of Run. Use it for
 	// destructive bulk actions so one failing item does not strand the rest.

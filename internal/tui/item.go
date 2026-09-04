@@ -42,6 +42,10 @@ type Header interface {
 	IsHeader() bool
 }
 
+// Searchable lets an item expose extra text to the fuzzy filter without
+// changing FilterValue, which is also used as the item's display label.
+type Searchable interface{ SearchValue() string }
+
 // HeaderItem is a ready-made Header row any command view can use.
 type HeaderItem struct{ Label string }
 

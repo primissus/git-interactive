@@ -8,10 +8,12 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
 
+	"git-interact/internal/gh"
 	"git-interact/internal/git"
 	"git-interact/internal/tui"
 	"git-interact/internal/validate"
@@ -25,6 +27,7 @@ type worktreeItem struct {
 	relDate  string
 	unix     int64
 	isMainWT bool
+	pr       gh.PR // zero value ("" Number 0) = no open PR
 }
 
 func (i worktreeItem) Columns() []string {
@@ -37,10 +40,24 @@ func (i worktreeItem) Columns() []string {
 		tui.FormatBranch(branch),
 		shortSHA(i.w.Head),
 		tui.FormatDate(i.unix, i.relDate),
+		formatPRCell(i.pr),
 	}
 }
 func (i worktreeItem) FilterValue() string { return i.w.Path + " " + i.w.Branch }
 func (i worktreeItem) Current() bool       { return i.isMainWT }
+
+// SearchValue widens fuzzy search to also match the row's formatted display
+// path (FilterValue carries the raw absolute path, which under a non-absolute
+// worktree-path format never matches what the column actually shows) and the
+// PR number, without changing FilterValue — which also labels this row in
+// resilient bulk operations (see batch.go).
+func (i worktreeItem) SearchValue() string {
+	pr := ""
+	if i.pr.Number != 0 {
+		pr = "#" + strconv.Itoa(i.pr.Number)
+	}
+	return i.w.Path + " " + tui.FormatWorktreePath(i.w.Path, i.cwd) + " " + i.w.Branch + " " + pr
+}
 
 func worktreeColumns() []tui.Column {
 	return []tui.Column{
@@ -48,6 +65,7 @@ func worktreeColumns() []tui.Column {
 		{Title: "branch", MinWidth: 10, Density: tui.DensityShort, Color: tui.ColorName},
 		{Title: "commit", MinWidth: 7, Density: tui.DensityNormal, Color: tui.ColorSHA},
 		{Title: "date", MinWidth: 7, Density: tui.DensityNormal, Color: tui.ColorDate},
+		{Title: "pr", MinWidth: 6, Density: tui.DensityNormal, Color: tui.ColorRef},
 	}
 }
 
@@ -61,8 +79,10 @@ func shortSHA(sha string) string {
 
 // loadWorktreeItems fetches worktrees and adapts them to tui.Items, resolving
 // each row's commit relative-date with a lightweight extra call (worktree
-// counts are small, so a per-row call is simpler than batching).
-func loadWorktreeItems(ctx context.Context, r *git.Runner) ([]tui.Item, error) {
+// counts are small, so a per-row call is simpler than batching). prCache is
+// the view's once-per-session PR fetch (nil until it completes, or forever
+// when gh is unavailable) — a nil map behaves like an empty one for lookups.
+func loadWorktreeItems(ctx context.Context, r *git.Runner, prCache map[string]gh.PR) ([]tui.Item, error) {
 	worktrees, err := git.ListWorktrees(ctx, r)
 	if err != nil {
 		return nil, err
@@ -80,9 +100,49 @@ func loadWorktreeItems(ctx context.Context, r *git.Runner) ([]tui.Item, error) {
 		if err != nil {
 			date, unix = "", 0
 		}
-		items = append(items, worktreeItem{w: w, cwd: cwd, relDate: date, unix: unix, isMainWT: w.Path == worktrees[0].Path})
+		items = append(items, worktreeItem{w: w, cwd: cwd, relDate: date, unix: unix, isMainWT: w.Path == worktrees[0].Path, pr: prCache[w.Branch]})
 	}
 	return items, nil
+}
+
+// worktreeViewState holds the worktree view's PR cache, filled in by the
+// background InitCmd (the same async-loading pattern as the branch view's
+// branchViewState, minus the sort/grouping state the worktree view doesn't
+// have). Guarded by mu since it's read by both the update goroutine (every
+// refresh) and the background fetch goroutine.
+type worktreeViewState struct {
+	mu      sync.Mutex
+	prCache map[string]gh.PR
+}
+
+func (s *worktreeViewState) setPRCache(m map[string]gh.PR) {
+	s.mu.Lock()
+	s.prCache = m
+	s.mu.Unlock()
+}
+
+func (s *worktreeViewState) getPRCache() map[string]gh.PR {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.prCache
+}
+
+// worktreePRInitCmd is the worktree view's Config.InitCmd: fetches open PRs in
+// the background (best-effort), caches them, and rebuilds the item list so
+// the column fills in without blocking Init(). Returns nil when gh is
+// unavailable so no subprocess ever spawns.
+func worktreePRInitCmd(ctx context.Context, r *git.Runner, state *worktreeViewState) tea.Cmd {
+	if !gh.Available() {
+		return nil
+	}
+	return func() tea.Msg {
+		state.setPRCache(gh.PRsByBranch(ctx, gh.NewRunner(r.Dir)))
+		items, err := loadWorktreeItems(ctx, r, state.getPRCache())
+		if err != nil {
+			return nil
+		}
+		return tui.SetItems(items)()
+	}
 }
 
 // commitRelDate returns sha's committer date in relative form, e.g. "3 days ago",
@@ -190,17 +250,29 @@ func runWorktree(cmd *cobra.Command, args []string) error {
 
 	flags := registeredFlags[cmd]
 	interactive := flags.resolveInteractive()
-	items, err := loadWorktreeItems(ctx, runner)
-	if err != nil {
-		return err
-	}
 
 	if !interactive {
+		// No TUI to fill the PR column in later, so fetch it synchronously —
+		// a one-shot print can afford the round trip. Best-effort: nil when gh
+		// is unavailable, and PRsByBranch itself returns nil on any failure.
+		var prCache map[string]gh.PR
+		if gh.Available() {
+			prCache = gh.PRsByBranch(ctx, gh.NewRunner(runner.Dir))
+		}
+		items, err := loadWorktreeItems(ctx, runner, prCache)
+		if err != nil {
+			return err
+		}
 		return tui.RenderTable(cmd.OutOrStdout(), worktreeColumns(), items, tui.TableOptions{
 			Density: densityFromFlags(flags),
 			Header:  true,
 			Marker:  true,
 		})
+	}
+
+	items, err := loadWorktreeItems(ctx, runner, nil)
+	if err != nil {
+		return err
 	}
 
 	cdFile, _ := cmd.Flags().GetString("cd-file")
@@ -211,13 +283,15 @@ func runWorktree(cmd *cobra.Command, args []string) error {
 	// own stdout), or, absent that, printed as the final stdout line for a
 	// hand-rolled `cd "$(gint worktree ...)"` (see .context/decisions.md).
 	var checkoutPath string
+	prState := &worktreeViewState{}
 	list := tui.New(tui.Config{
 		Title:      "gint worktree",
 		Columns:    worktreeColumns(),
 		Items:      items,
-		Operations: buildWorktreeOperations(ctx, runner, &checkoutPath),
+		Operations: buildWorktreeOperations(ctx, runner, &checkoutPath, prState),
 		Density:    densityFromFlags(flags),
 		Sort:       flags.sort,
+		InitCmd:    worktreePRInitCmd(ctx, runner, prState),
 	})
 	p := tea.NewProgram(list, tea.WithAltScreen(), tea.WithContext(ctx))
 	if _, err := p.Run(); err != nil {
@@ -250,9 +324,10 @@ func worktreeBranch(ctx context.Context, r *git.Runner, path string) (string, er
 // buildWorktreeOperations returns the worktree view's operation registry.
 // checkoutPath is written by the "checkout" operation and read by runWorktree
 // once the program exits, since a subprocess cannot cd its parent shell.
-func buildWorktreeOperations(ctx context.Context, r *git.Runner, checkoutPath *string) []tui.Operation {
+// prState carries the async PR cache (see worktreePRInitCmd).
+func buildWorktreeOperations(ctx context.Context, r *git.Runner, checkoutPath *string, prState *worktreeViewState) []tui.Operation {
 	refresh := func() tea.Cmd {
-		items, err := loadWorktreeItems(ctx, r)
+		items, err := loadWorktreeItems(ctx, r, prState.getPRCache())
 		if err != nil {
 			return tui.Status(err.Error())
 		}
@@ -272,6 +347,22 @@ func buildWorktreeOperations(ctx context.Context, r *git.Runner, checkoutPath *s
 				}
 				*checkoutPath = w.w.Path
 				return tea.Quit
+			},
+		},
+		{
+			Name: "open pr", Scope: tui.ScopeItem,
+			Run: func(c tui.OpContext) tea.Cmd {
+				w, ok := targetWorktree(c.Items)
+				if !ok {
+					return tui.Status("select a worktree first")
+				}
+				if w.pr.Number == 0 {
+					return tui.Status("no open PR for " + w.w.Branch)
+				}
+				if err := gh.OpenPR(ctx, gh.NewRunner(r.Dir), w.pr.Number); err != nil {
+					return tui.Status(err.Error())
+				}
+				return tui.Status(fmt.Sprintf("opened PR #%d", w.pr.Number))
 			},
 		},
 		{

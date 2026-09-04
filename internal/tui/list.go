@@ -49,6 +49,7 @@ type List struct {
 
 	ops       []Operation
 	shortcuts map[string]Operation // Key -> Operation
+	initCmd   tea.Cmd              // Config.InitCmd, run once from Init
 
 	selectMode bool
 	selected   map[int]bool // item indices currently selected
@@ -110,6 +111,12 @@ type Config struct {
 	// View names the owning command view ("branch", "log", …), driving which
 	// sections the settings overlay shows. "" = generic view.
 	View string
+	// InitCmd, when non-nil, runs once on Init alongside the framework's own
+	// startup command (e.g. the search blink), batched so neither replaces the
+	// other. It is the hook background data loads (the branch/worktree views'
+	// best-effort PR fetch) use to populate the list after it's already
+	// rendered, instead of blocking Init() on a subprocess call.
+	InitCmd tea.Cmd
 }
 
 // New builds a List from cfg.
@@ -140,6 +147,7 @@ func New(cfg Config) *List {
 		openMenu:      cfg.OpenMenu,
 		openMenuStart: cfg.OpenMenuOnStart,
 		view:          cfg.View,
+		initCmd:       cfg.InitCmd,
 		width:         80,
 		height:        24,
 	}
@@ -154,11 +162,18 @@ func New(cfg Config) *List {
 
 // Init implements tea.Model.
 func (l *List) Init() tea.Cmd {
+	var cmds []tea.Cmd
 	if l.openMenuStart && len(l.visible) > 0 {
 		l.openItemMenu(l.openMenu)
-		return textinput.Blink
+		cmds = append(cmds, textinput.Blink)
 	}
-	return nil
+	if l.initCmd != nil {
+		cmds = append(cmds, l.initCmd)
+	}
+	if len(cmds) == 0 {
+		return nil
+	}
+	return tea.Batch(cmds...)
 }
 
 // SelectedItems returns the currently selected rows in list order. Bulk
@@ -612,9 +627,13 @@ func (l *List) runInput(op Operation, items []Item) tea.Cmd {
 }
 
 func (l *List) runConfirm(op Operation, items []Item, input string) tea.Cmd {
-	if op.Confirm != nil {
+	spec := op.Confirm
+	if op.ConfirmFrom != nil {
+		spec = op.ConfirmFrom(items)
+	}
+	if spec != nil {
 		l.pending = &pending{op: op, items: items, input: input}
-		l.confirm = newConfirm(*op.Confirm, &l.styles)
+		l.confirm = newConfirm(*spec, &l.styles)
 		l.mode = modeConfirm
 		return textinput.Blink
 	}

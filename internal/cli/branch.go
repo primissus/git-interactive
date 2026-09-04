@@ -5,13 +5,16 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/atotto/clipboard"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
 
+	"git-interact/internal/gh"
 	"git-interact/internal/git"
 	"git-interact/internal/tui"
 	"git-interact/internal/validate"
@@ -30,6 +33,7 @@ type branchItem struct {
 	displayName string // leaf segment + indent when tree view is active
 	wtPath      string // absolute path of the worktree holding this branch ("" = none)
 	cwd         string // process cwd, for live worktree-path formatting
+	pr          gh.PR  // zero value ("" Number 0) = no open PR
 }
 
 func (i branchItem) Columns() []string {
@@ -39,10 +43,35 @@ func (i branchItem) Columns() []string {
 	} else {
 		name = tui.FormatBranch(name)
 	}
-	return []string{name, i.b.Subject, tui.FormatDate(i.b.CommitUnix, i.b.CommitDate), tui.FormatAuthor(i.b.AuthorName), tui.FormatWorktreePath(i.wtPath, i.cwd)}
+	return []string{name, i.b.Subject, tui.FormatDate(i.b.CommitUnix, i.b.CommitDate), tui.FormatAuthor(i.b.AuthorName), tui.FormatWorktreePath(i.wtPath, i.cwd), formatPRCell(i.pr)}
 }
 func (i branchItem) FilterValue() string { return i.b.Name }
 func (i branchItem) Current() bool       { return i.b.Head }
+
+// SearchValue widens fuzzy search to also match the branch's formatted
+// worktree-path display and its PR number, without changing FilterValue —
+// which stays the branch name alone since it also labels this row in
+// resilient bulk operations (see batch.go).
+func (i branchItem) SearchValue() string {
+	pr := ""
+	if i.pr.Number != 0 {
+		pr = "#" + strconv.Itoa(i.pr.Number)
+	}
+	return i.b.Name + " " + tui.FormatWorktreePath(i.wtPath, i.cwd) + " " + pr
+}
+
+// formatPRCell renders a branch/worktree row's PR column: "#412 open" or
+// "#412 draft", empty when the row has no open PR.
+func formatPRCell(pr gh.PR) string {
+	if pr.Number == 0 {
+		return ""
+	}
+	state := "open"
+	if pr.IsDraft {
+		state = "draft"
+	}
+	return "#" + strconv.Itoa(pr.Number) + " " + state
+}
 
 // createBranchItem is the pinned "create a branch" row shown above the list;
 // see PROMPT.md branch → "Create: an entry above the list (default focus
@@ -52,7 +81,9 @@ func (i branchItem) Current() bool       { return i.b.Head }
 // placeholder row) and goes straight to the name prompt.
 type createBranchItem struct{}
 
-func (createBranchItem) Columns() []string   { return []string{"+ new branch (Shift+N)", "", "", "", ""} }
+func (createBranchItem) Columns() []string {
+	return []string{"+ new branch (Shift+N)", "", "", "", "", ""}
+}
 func (createBranchItem) FilterValue() string { return "" }
 func (createBranchItem) Current() bool       { return false }
 func (createBranchItem) DefaultOp() string   { return "new" }
@@ -66,6 +97,7 @@ func branchColumns() []tui.Column {
 		// Worktree column: visible in the default and -F views, hidden in -s
 		// (DensityNormal), matching the intent of "visible in default and -F".
 		{Title: "worktree", MinWidth: 8, Density: tui.DensityNormal, Color: tui.ColorDate},
+		{Title: "pr", MinWidth: 6, Density: tui.DensityNormal, Color: tui.ColorRef},
 	}
 }
 
@@ -188,8 +220,11 @@ func sortBranches(branches []git.Branch, mode string) {
 // the interactive list, not for -I output or direct-menu mode). Each row's
 // worktree cell comes from the git worktree list map (raw absolute paths,
 // formatted at render time), which covers the main worktree — %(worktreepath)
-// alone is empty there.
-func loadBranchItems(ctx context.Context, r *git.Runner, f branchFilters, sortMode string, includeCreateRow bool) ([]tui.Item, error) {
+// alone is empty there. prCache is the branch view's once-per-session PR
+// fetch (nil until it completes, or forever when gh is unavailable) — a nil
+// map behaves like an empty one for lookups, so every row's PR cell is simply
+// empty until the async load lands.
+func loadBranchItems(ctx context.Context, r *git.Runner, f branchFilters, sortMode string, includeCreateRow bool, prCache map[string]gh.PR) ([]tui.Item, error) {
 	branches, err := git.ListBranches(ctx, r)
 	if err != nil {
 		return nil, err
@@ -214,7 +249,7 @@ func loadBranchItems(ctx context.Context, r *git.Runner, f branchFilters, sortMo
 		items = append(items, createBranchItem{})
 	}
 	for _, b := range branches {
-		items = append(items, branchItem{b: b, merged: merged[b.Name], wtPath: branchWT[b.Name], cwd: cwd})
+		items = append(items, branchItem{b: b, merged: merged[b.Name], wtPath: branchWT[b.Name], cwd: cwd, pr: prCache[b.Name]})
 	}
 	return items, nil
 }
@@ -257,6 +292,8 @@ func newBranchCmd() *cobra.Command {
 	cmd.Flags().Bool("merged", false, "filter: only branches merged into the current branch")
 	cmd.Flags().Bool("not-merged", false, "filter: only branches not merged into the current branch")
 	cmd.Flags().Bool("gone", false, "filter: only branches whose upstream was deleted")
+	cmd.Flags().String("cd-file", "", "write the checkout-elsewhere worktree path to this file (used by the shell wrapper)")
+	_ = cmd.Flags().MarkHidden("cd-file")
 	cmd.RunE = runBranch
 	return cmd
 }
@@ -318,7 +355,14 @@ func runBranch(cmd *cobra.Command, args []string) error {
 
 	interactive := flags.resolveInteractive()
 	if !interactive {
-		items, err := loadBranchItems(ctx, runner, f, state.sort, false)
+		// No TUI to fill the PR column in later, so fetch it synchronously —
+		// a one-shot print can afford the round trip. Best-effort: nil when gh
+		// is unavailable, and PRsByBranch itself returns nil on any failure.
+		var prCache map[string]gh.PR
+		if gh.Available() {
+			prCache = gh.PRsByBranch(ctx, gh.NewRunner(runner.Dir))
+		}
+		items, err := loadBranchItems(ctx, runner, f, state.sort, false, prCache)
 		if err != nil {
 			return err
 		}
@@ -329,13 +373,12 @@ func runBranch(cmd *cobra.Command, args []string) error {
 		})
 	}
 
+	cdFile, _ := cmd.Flags().GetString("cd-file")
+
 	for {
-		items, err := loadBranchItems(ctx, runner, f, state.sort, true)
+		items, label, err := state.rebuild(ctx, runner, f, true)
 		if err != nil {
 			return err
-		}
-		if state.grouped {
-			items = applyGrouping(items, state.collapsed)
 		}
 		list := tui.New(tui.Config{
 			Title:         "gint branch",
@@ -343,15 +386,25 @@ func runBranch(cmd *cobra.Command, args []string) error {
 			Items:         items,
 			Operations:    buildBranchOperations(ctx, runner, f, state, true),
 			Density:       densityFromFlags(flags),
-			Sort:          state.sortLabel(),
+			Sort:          label,
 			InitialCursor: 1, // focus stays on the first real branch, past the create row
 			View:          "branch",
 			// Live hidden-column set from the :settings overlay. The List
 			// re-reads it per frame; -I output keeps the full column set.
 			HiddenColumns: tui.ActiveBranchHidden,
+			InitCmd:       prInitCmd(ctx, runner, f, state, true),
 		})
 		p := tea.NewProgram(list, tea.WithAltScreen(), tea.WithContext(ctx))
 		if _, err := p.Run(); err != nil {
+			return err
+		}
+		if state.cdPath != "" {
+			path := state.cdPath
+			state.cdPath = ""
+			if cdFile != "" {
+				return os.WriteFile(cdFile, []byte(path+"\n"), 0o644)
+			}
+			_, err := fmt.Fprintln(cmd.OutOrStdout(), path)
 			return err
 		}
 		reentered, err := runBranchRebaseHandoff(cmd, runner, state, flags)
@@ -383,8 +436,9 @@ func branchFiltersFromFlags(cmd *cobra.Command) (branchFilters, error) {
 func runBranchDirectMenu(cmd *cobra.Command, r *git.Runner, name string, f branchFilters, state *branchViewState) error {
 	ctx := cmd.Context()
 	flags := registeredFlags[cmd]
+	cdFile, _ := cmd.Flags().GetString("cd-file")
 	for {
-		items, err := loadBranchItems(ctx, r, f, state.sort, false)
+		items, err := loadBranchItems(ctx, r, f, state.getSort(), false, nil)
 		if err != nil {
 			return err
 		}
@@ -409,6 +463,15 @@ func runBranchDirectMenu(cmd *cobra.Command, r *git.Runner, name string, f branc
 		})
 		p := tea.NewProgram(list, tea.WithAltScreen(), tea.WithContext(ctx))
 		if _, err := p.Run(); err != nil {
+			return err
+		}
+		if state.cdPath != "" {
+			path := state.cdPath
+			state.cdPath = ""
+			if cdFile != "" {
+				return os.WriteFile(cdFile, []byte(path+"\n"), 0o644)
+			}
+			_, err := fmt.Fprintln(cmd.OutOrStdout(), path)
 			return err
 		}
 		reentered, err := runBranchRebaseHandoff(cmd, r, state, flags)
@@ -446,20 +509,149 @@ func runBranchRebaseHandoff(cmd *cobra.Command, r *git.Runner, state *branchView
 }
 
 // branchViewState holds the mutable runtime state shared between the ops
-// closure and the refresh function inside buildBranchOperations.
+// closure, the refresh function inside buildBranchOperations, and — since the
+// PR fetch runs as a background tea.Cmd (the first in the codebase; see
+// .context/decisions.md) — the async goroutine that fills in the PR column.
+// sort/grouped/collapsed/prCache are read and written from both the update
+// goroutine (every Operation.Run body) and that background goroutine, so all
+// access to them goes through mu; rebaseBase and cdPath are touched only on
+// the update goroutine (an operation's Run, and the main loop after p.Run()
+// returns) and need no lock.
 type branchViewState struct {
-	sort       string
-	grouped    bool
-	collapsed  map[string]bool
+	mu        sync.Mutex
+	sort      string
+	grouped   bool
+	collapsed map[string]bool
+	prCache   map[string]gh.PR // nil until the async fetch completes, or forever without gh
+
 	rebaseBase string // set by the rebase op to hand off to runRebaseInteractive; reset after handoff
+	cdPath     string // set by checkout's ConfirmFrom "cd" choice to hand off to the shell
+}
+
+func (s *branchViewState) getSort() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.sort
+}
+
+func (s *branchViewState) setSort(v string) {
+	s.mu.Lock()
+	s.sort = v
+	s.mu.Unlock()
+}
+
+// toggleGrouped flips tree-view mode, resetting the collapsed set on and
+// clearing it off, and reports the new state.
+func (s *branchViewState) toggleGrouped() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.grouped = !s.grouped
+	if !s.grouped {
+		s.collapsed = nil
+	} else if s.collapsed == nil {
+		s.collapsed = map[string]bool{}
+	}
+	return s.grouped
+}
+
+// toggleCollapsed flips one group's collapsed state. It replaces the
+// collapsed map wholesale (copy-on-write) rather than mutating it in place,
+// so a map reference already handed to the background rebuild goroutine via
+// snapshot stays valid without its own lock.
+func (s *branchViewState) toggleCollapsed(prefix string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	next := make(map[string]bool, len(s.collapsed)+1)
+	for k, v := range s.collapsed {
+		next[k] = v
+	}
+	next[prefix] = !next[prefix]
+	s.collapsed = next
+}
+
+// setPRCache installs the async fetch's result. Like collapsed, it replaces
+// the map wholesale so earlier snapshots stay immutable.
+func (s *branchViewState) setPRCache(m map[string]gh.PR) {
+	s.mu.Lock()
+	s.prCache = m
+	s.mu.Unlock()
+}
+
+// snapshot reads sort/grouped/collapsed/prCache together under one lock, for
+// rebuild — reading them one accessor at a time could observe sort from
+// before a concurrent toggle and grouped from after it.
+func (s *branchViewState) snapshot() (sortMode string, grouped bool, collapsed map[string]bool, prCache map[string]gh.PR) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.sort, s.grouped, s.collapsed, s.prCache
 }
 
 func (s *branchViewState) sortLabel() string {
-	l := s.sort
-	if s.grouped {
+	sortMode, grouped, _, _ := s.snapshot()
+	l := sortMode
+	if grouped {
 		l += " · tree"
 	}
 	return l
+}
+
+// rebuild loads, sorts, and (if grouped) groups the branch list from a single
+// consistent snapshot of state — the shared path for the synchronous refresh
+// used by every operation and the background PR-fetch goroutine. It builds
+// items from raw data only: no Item.Columns(), SearchValue(), or tui format
+// getter runs here, all of which read package vars owned by the render
+// goroutine.
+func (s *branchViewState) rebuild(ctx context.Context, r *git.Runner, f branchFilters, includeCreateRow bool) ([]tui.Item, string, error) {
+	sortMode, grouped, collapsed, prCache := s.snapshot()
+	items, err := loadBranchItems(ctx, r, f, sortMode, includeCreateRow, prCache)
+	if err != nil {
+		return nil, "", err
+	}
+	if grouped {
+		items = applyGrouping(items, collapsed)
+	}
+	label := sortMode
+	if grouped {
+		label += " · tree"
+	}
+	return items, label, nil
+}
+
+// prInitCmd is the branch view's Config.InitCmd: it fetches open PRs in the
+// background (best-effort — nil on any failure), caches them on state, and
+// rebuilds the item list so the column fills in without blocking Init(). It
+// returns nil when gh is unavailable so no subprocess ever spawns.
+func prInitCmd(ctx context.Context, r *git.Runner, f branchFilters, state *branchViewState, includeCreateRow bool) tea.Cmd {
+	if !gh.Available() {
+		return nil
+	}
+	return func() tea.Msg {
+		state.setPRCache(gh.PRsByBranch(ctx, gh.NewRunner(r.Dir)))
+		items, _, err := state.rebuild(ctx, r, f, includeCreateRow)
+		if err != nil {
+			return nil
+		}
+		return tui.SetItems(items)()
+	}
+}
+
+// checkoutConfirm offers "cd there" when the target branch is checked out in
+// another worktree — checking it out here would otherwise fail with git's
+// raw "already used by worktree" stderr. It fires only then; an ordinary
+// branch checks out with no prompt.
+func checkoutConfirm(items []tui.Item) *tui.Confirm {
+	b, ok := targetBranch(items)
+	if !ok || b.wtPath == "" || b.b.Head {
+		return nil
+	}
+	return &tui.Confirm{
+		Kind:   tui.ConfirmChoice,
+		Prompt: "Already checked out at " + b.wtPath + " — move there instead?",
+		Choices: []tui.Choice{
+			{Label: "no", Value: "", Key: "n"},
+			{Label: "cd there", Value: "cd", Key: "c"},
+		},
+	}
 }
 
 // buildBranchOperations returns the branch view's operation registry.
@@ -467,14 +659,11 @@ func (s *branchViewState) sortLabel() string {
 // items so a post-mutation refresh keeps the same shape.
 func buildBranchOperations(ctx context.Context, r *git.Runner, f branchFilters, state *branchViewState, includeCreateRow bool) []tui.Operation {
 	refresh := func() tea.Cmd {
-		items, err := loadBranchItems(ctx, r, f, state.sort, includeCreateRow)
+		items, label, err := state.rebuild(ctx, r, f, includeCreateRow)
 		if err != nil {
 			return tui.Status(err.Error())
 		}
-		if state.grouped {
-			items = applyGrouping(items, state.collapsed)
-		}
-		return tea.Batch(tui.SetSortLabel(state.sortLabel()), tui.SetItems(items))
+		return tea.Batch(tui.SetSortLabel(label), tui.SetItems(items))
 	}
 	refreshWith := func(status string) tea.Cmd {
 		return tea.Batch(tui.Status(status), refresh())
@@ -498,15 +687,36 @@ func buildBranchOperations(ctx context.Context, r *git.Runner, f branchFilters, 
 	return tui.ApplyKeymap("branch", []tui.Operation{
 		{
 			Name: "checkout", Key: "C", Scope: tui.ScopeItem,
+			ConfirmFrom: checkoutConfirm,
 			Run: func(c tui.OpContext) tea.Cmd {
 				b, ok := targetBranch(c.Items)
 				if !ok {
 					return tui.Status("select a branch first")
 				}
+				if c.Choice == "cd" {
+					state.cdPath = b.wtPath
+					return tea.Quit
+				}
 				if err := git.CheckoutBranch(ctx, r, b.b.Name); err != nil {
 					return tui.Status(err.Error())
 				}
 				return refreshWith("checked out " + b.b.Name)
+			},
+		},
+		{
+			Name: "open pr", Scope: tui.ScopeItem,
+			Run: func(c tui.OpContext) tea.Cmd {
+				b, ok := targetBranch(c.Items)
+				if !ok {
+					return tui.Status("select a branch first")
+				}
+				if b.pr.Number == 0 {
+					return tui.Status("no open PR for " + b.b.Name)
+				}
+				if err := gh.OpenPR(ctx, gh.NewRunner(r.Dir), b.pr.Number); err != nil {
+					return tui.Status(err.Error())
+				}
+				return tui.Status(fmt.Sprintf("opened PR #%d", b.pr.Number))
 			},
 		},
 		{
@@ -663,22 +873,18 @@ func buildBranchOperations(ctx context.Context, r *git.Runner, f branchFilters, 
 		{
 			Name: "sort", Key: "S", Scope: tui.ScopeList,
 			Run: func(c tui.OpContext) tea.Cmd {
-				state.sort = nextSortMode(state.sort)
-				return tea.Batch(tui.Status("sorted by "+state.sort), refresh())
+				sortMode := nextSortMode(state.getSort())
+				state.setSort(sortMode)
+				return tea.Batch(tui.Status("sorted by "+sortMode), refresh())
 			},
 		},
 		{
 			Name: "group", Key: "T", Scope: tui.ScopeList,
 			Run: func(c tui.OpContext) tea.Cmd {
-				state.grouped = !state.grouped
-				if !state.grouped {
-					state.collapsed = nil
-					return refreshWith("tree view off")
+				if state.toggleGrouped() {
+					return refreshWith("tree view on")
 				}
-				if state.collapsed == nil {
-					state.collapsed = map[string]bool{}
-				}
-				return refreshWith("tree view on")
+				return refreshWith("tree view off")
 			},
 		},
 		{
@@ -691,7 +897,7 @@ func buildBranchOperations(ctx context.Context, r *git.Runner, f branchFilters, 
 				if !ok {
 					return tui.Status("not a group")
 				}
-				state.collapsed[g.prefix] = !g.collapsed
+				state.toggleCollapsed(g.prefix)
 				return refresh()
 			},
 		},

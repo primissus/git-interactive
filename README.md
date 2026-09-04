@@ -81,9 +81,9 @@ parentheses.
 
 | Command | Alias | What it does |
 |---|---|---|
-| `gint branch` | `br` | Browse branches (last commit, author, date, worktree). Checkout, delete, rename, pull/push, merge, bulk archive/delete. |
+| `gint branch` | `br` | Browse branches (last commit, author, date, worktree, PR). Checkout (offers to `cd` if checked out elsewhere), delete, rename, pull/push, merge, open PR, bulk archive/delete. |
 | `gint tags` | `tag` | Browse tags (message, tagger/author, date). Checkout (detached), delete, push, bulk delete. |
-| `gint worktree` | `wt` | Browse worktrees. Checkout (prints the path — see below), create, prune, lock/unlock, delete. |
+| `gint worktree` | `wt` | Browse worktrees (path, branch, commit, date, PR). Checkout (prints the path — see below), create, prune, lock/unlock, delete, open PR. |
 | `gint log` | `lg` | Browse commits. Checkout (detached), cherry-pick, squash, reset, merge, copy sha. |
 | `gint graph` | `gr` | Commit graph (git's own layout). `-A` bases it on the current branch instead of all. |
 | `gint graph-branch` | `grb` | Graph of each branch's last commit. |
@@ -98,10 +98,11 @@ Every command also accepts a branch/commit name or flags for non-interactive
 use, e.g. `gint branch -b feature/login`, `gint commit -I "message"`,
 `gint branch <name>` (opens that branch's operation menu directly).
 
-### `worktree` checkout
+### `worktree`/`branch` checkout
 
-A subprocess can't change your shell's directory, so `gint worktree` checkout
-hands the chosen path back to the shell. Install the wrapper once and checkout
+A subprocess can't change your shell's directory, so `gint worktree` checkout,
+and `gint branch` checkout when the target is checked out in another worktree,
+hand the chosen path back to the shell. Install the wrapper once and checkout
 will `cd` for you:
 
 ```sh
@@ -115,6 +116,19 @@ The wrapper runs the real binary with a temp `--cd-file`, then `cd`s to whatever
 worktree you checked out; every other `gint` command passes straight through.
 Without the wrapper, checkout still prints the path as its final line, so
 `cd "$(gint worktree)"` works as a fallback.
+
+In `gint branch`, checking out a branch that's already checked out somewhere
+else prompts first — "already checked out at `<path>` — move there instead?"
+(no / cd there) — instead of failing with git's raw "already used by
+worktree" error. An ordinary branch checks out with no prompt.
+
+### Pull requests
+
+`branch` and `worktree` show a `pr` column (`#412 open` / `#412 draft`) and an
+"open PR" operation, backed by [`gh`](https://cli.github.com/) — loaded in the
+background so the list renders immediately and the column fills in once the
+fetch completes. With no `gh` on PATH, no GitHub remote, or no `gh auth
+login`, the column just stays empty; nothing to configure.
 
 ## Interaction model
 
@@ -221,9 +235,11 @@ Valid values:
 | `logHiddenColumns` | column title list | none | TUI-only; titles hidden in `gint lg` |
 
 `gint br` and `gint lg` add a **Display** section whose checkboxes toggle
-those columns (`[x]` = shown). Hiding is TUI-only — `-I` always prints the
-full column set. `gint br`'s overlay also cycles the worktree-path format;
-`gint lg`'s overlay cycles author and branch formats.
+those columns (`[x]` = shown), including `gint br`'s `pr` column. Hiding is
+TUI-only — `-I` always prints the full column set. `gint br`'s overlay also
+cycles the worktree-path format; `gint lg`'s overlay cycles author and branch
+formats. `gint wt` has no settings section of its own yet, so its `pr` column
+is always on.
 
 A missing or malformed file is not fatal — `gint` warns and falls back to
 defaults, exactly like `keymap.json`. Changes preview live (←/→ toggle,

@@ -18,3 +18,4 @@ Phased plan to build `gint` per [PROMPT.md](../PROMPT.md). Each phase has a `PLA
 | [p12](p12/PLAN.md) | `branch` rebase operation: interactive rebase from branch list |
 | [p13](p13/PLAN.md) | Display improvements: per-column colors, deficit-weighted widths, configurable date/branch/author formats |
 | [p14](p14/PLAN.md) | Per-view column settings: `br`/`lg` display-column toggles + format menus, worktree column in `br`, worktree-path format |
+| [p15](p15/PLAN.md) | Worktree-aware branch checkout, worktree search audit, GitHub PR column in `br`/`wt` |

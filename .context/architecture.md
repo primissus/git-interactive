@@ -9,22 +9,25 @@
 - CLI / arg parsing: Cobra (commands, subcommands, aliases, flags)
 - Fuzzy matching: sahilm/fuzzy (powers `/` search and name disambiguation)
 - Git access: shell out to the `git` binary (no go-git unless porcelain parsing gets painful)
+- GitHub access: shell out to the `gh` binary, optionally — `internal/gh` mirrors `internal/git`'s shape but is its own package, not an extension of `git.Runner`
 - Database: none
-- External services: none
+- External services: GitHub, indirectly, only through the optional `gh` CLI (no direct API calls, no token handling)
 
 ## Folder map
 - `cmd/gint/` → main entry point
 - `internal/cli/` → Cobra commands (one file per command; `_demo` is the hidden TUI harness)
 - `internal/git/` → git exec wrapper + porcelain parsers
-- `internal/tui/` → shared Bubble Tea interaction layer (list, search, menu, confirm, input, select mode, tabular renderer, `batch.go` resilient bulk ops, `?` help overlay, count-prefix/half-page nav, per-column color via `Column.Color`/`Column.Render`, theming via `themes.go` + `settings.go` + the `:settings` overlay). Commands supply `Item`s + `Operation`s to `tui.New`; they never reimplement interactions.
+- `internal/gh/` → optional `gh` CLI wrapper (`Available`, `ListPRs`/`PRsByBranch`, `OpenPR`); every caller treats failure as "no PR data", never an error to surface
+- `internal/tui/` → shared Bubble Tea interaction layer (list, search, menu, confirm, input, select mode, tabular renderer, `batch.go` resilient bulk ops, `?` help overlay, count-prefix/half-page nav, per-column color via `Column.Color`/`Column.Render`, theming via `themes.go` + `settings.go` + the `:settings` overlay, `Config.InitCmd` for a one-shot background load run from `List.Init`). Commands supply `Item`s + `Operation`s to `tui.New`; they never reimplement interactions.
 - `phases/p1..p8/` → development plan (PLAN.md) and status (PROGRESS.md) per phase
 - `PROMPT.md` → full product spec (source of truth for behavior)
 
 ## Data flow
-A Cobra command parses flags → fetches data through `internal/git` (exec `git`, parse porcelain output) → renders either an interactive Bubble Tea list/graph view (`-i`, default) or a plain tabular print (`-I`). View operations (checkout, delete, merge…) dispatch back through `internal/git`, gated by confirmation components.
+A Cobra command parses flags → fetches data through `internal/git` (exec `git`, parse porcelain output) → renders either an interactive Bubble Tea list/graph view (`-i`, default) or a plain tabular print (`-I`). View operations (checkout, delete, merge…) dispatch back through `internal/git`, gated by confirmation components. `branch` and `worktree` additionally fetch open PRs through `internal/gh` — synchronously before a `-I` print, or as a background `Config.InitCmd` in the interactive view so the list renders before the fetch completes; either way a nil/empty result just means an empty `pr` column, never an error.
 
 ## What does NOT exist (and should not be created)
 - No go-git dependency by default — shell out to `git`.
+- No direct GitHub API client — shell out to `gh`, mirroring the `git` shell-out decision; no token/auth handling of gint's own.
 - No Viper-based config system — the only config files are the small JSON ones: `~/.config/gint/keymap.json` (key/hint overrides) and `~/.config/gint/settings.json` (appearance + theme). Both load via `encoding/json`, not Viper.
 - No v1 implementation of `remote`, `branch-remotes`, `diff`, `resolve-conflicts` — post-v1, but keep select mode and the conflict component open for them (PROMPT.md → Future).
 

@@ -60,21 +60,23 @@ Interactive tabular list of branches. Columns: branch name, last commit, last au
 - **Search**: fuzzy find with `/`.
 - **Create**: an entry above the list (default focus stays on the first branch) to create a new branch.
 - **Tree grouping** (`T`, or `:group`): toggles a collapsible tree view that groups branches by their `/`-separated path segments. Directories are sorted alphabetically; branches within a directory keep the active sort order. Enter on a directory row expands or collapses it. Branches show only their leaf name with progressive indentation. Disabled in `-I` mode and direct-menu mode.
-- **Enter menu**: checkout, delete (confirm; force-delete requires typing `force`), pull, push, rename (pre-filled with the current branch name), copy sha (`y`), copy name (`c`).
+- **Enter menu**: checkout, delete (confirm; force-delete requires typing `force`), pull, push, rename (pre-filled with the current branch name), copy sha (`y`), copy name (`c`), open PR (opens the branch's pull request, if any, in the browser via `gh pr view --web`).
 - **Select mode** (`Shift+X`) bulk operations:
   - archive: tag as `archive/<branch-name>` and delete the branch
   - delete: confirm by typing `delete all`
   - force delete: confirm by typing `force delete`
 - **Merge** (`Shift+M`): merge the selected branch into the current one, reusing the `merge` command's confirmation flow.
 - **Rebase** (`B`): rebase the current branch onto the selected one via the interactive `rebase` plan view; returns to the branch list afterwards.
+- **Checkout into another worktree**: checking out a branch that's already checked out somewhere else normally fails with git's raw "already used by worktree" error. Instead, `checkout` offers a prompt — "already checked out at `<path>` — move there instead?" (no / cd there) — and choosing "cd there" quits the view and hands the path to the shell exactly like `worktree`'s own checkout (see below); it needs the same `shell-init` wrapper to actually change directories. No prompt appears for a branch with no worktree of its own, or for the branch already checked out here.
+- **Pull-request column**: a `pr` column (`#412 open` / `#412 draft`) fetched from `gh pr list` in the background — the list renders immediately and the column fills in once the fetch completes. Silently empty with no `gh` on PATH, no GitHub remote, no `gh auth login`, or any other failure; no flag or setting enables/disables it. Fetched once per view session, not on every refresh, so it survives a checkout or delete without re-fetching.
 - **Flags**: common flags plus `-b`/`--new` (create branch), `-D`/`--delete`, `-m`/`--rename`.
 - `gint branch <branchname>` (no options): shows an operations menu for that branch, expecting input; supports fuzzy matching (`pull` lowercase vs `Push` uppercase to disambiguate).
 
 ### `worktree` (alias `wt`)
 
-Interactive list of worktrees. Columns: path (shortest form: relative, or absolute with `~`), branch, commit, relative date.
+Interactive list of worktrees. Columns: path (shortest form: relative, or absolute with `~`), branch, commit, relative date, pull request (same best-effort `gh`-backed column and "open PR" operation as `branch`, described there).
 
-- **Operations**: checkout (cd into the directory), fuzzy search, sort, filter, delete, fetch (`f`), pull (`p`), push, rename branch, create worktree (`Shift+N`), prune stale worktrees, lock/unlock, copy path.
+- **Operations**: checkout (cd into the directory), fuzzy search, sort, filter, delete, fetch (`f`), pull (`p`), push, rename branch, create worktree (`Shift+N`), prune stale worktrees, lock/unlock, copy path, open PR.
 - Same shortcuts and flags as `branch`.
 
 ### `graph-branch` (alias `grb`)
@@ -147,7 +149,7 @@ Every interactive view opens a settings overlay via `:` → `settings` (alias `m
 
 - **Generic sections** (every view): appearance (system/light/dark), date format (short/long/iso), and the theme list.
 - **Per-view Display sections** toggle which columns render:
-  - `branch`: branch, last commit, date, author, worktree.
+  - `branch`: branch, last commit, date, author, worktree, pr.
   - `log`: sha, message, date, author, branches, worktree.
   - Hiding is TUI-only — `-I`/`--no-interactive` output always shows the full column set.
 - **Format rows**: `log`'s menu carries author (short/initials/full) and branch (full/short/ultra-short) format rows; `branch`'s menu carries a worktree-path row (shortest/relative/absolute). Other views keep the original format rows.
@@ -164,6 +166,7 @@ Every interactive view opens a settings overlay via `:` → `settings` (alias `m
 - **Build**: a `Makefile` with at least `build`, `install`, `test`, `lint`, `fmt` targets.
 - **Tests**: standard `go test`, with [teatest](https://github.com/charmbracelet/x/tree/main/exp/teatest) for TUI interaction tests.
 - **Fuzzy matching**: [sahilm/fuzzy](https://github.com/sahilm/fuzzy) — powers `/` search and branch-name disambiguation.
+- **GitHub CLI (`gh`)**: optional. `branch` and `worktree`'s pull-request column and "open PR" operation shell out to it exactly like git access shells out to `git`; absent, unauthenticated, or erroring, the column just stays empty — no flag, no error, no v1 hard dependency.
 - **Lint**: `golangci-lint`.
 - **Context docs**: generate the project context architecture with `/setup-context-architecture` (AGENTS.md / CLAUDE.md + `.context/` docs).
 

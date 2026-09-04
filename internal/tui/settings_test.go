@@ -234,7 +234,8 @@ func TestCurrentSettingsSnapshotsActive(t *testing.T) {
 	}
 }
 
-// branchDemoColumns mirrors gint br's column set (incl. the worktree column).
+// branchDemoColumns mirrors gint br's column set (incl. the worktree and pr
+// columns).
 func branchDemoColumns() []Column {
 	return []Column{
 		{Title: "branch", MinWidth: 12, Flex: true, Density: DensityShort},
@@ -242,6 +243,7 @@ func branchDemoColumns() []Column {
 		{Title: "date", MinWidth: 7, Density: DensityNormal},
 		{Title: "author", MinWidth: 10, Density: DensityNormal},
 		{Title: "worktree", MinWidth: 8, Density: DensityNormal},
+		{Title: "pr", MinWidth: 6, Density: DensityNormal},
 	}
 }
 
@@ -285,9 +287,9 @@ func TestSettingsModelBranchViewSections(t *testing.T) {
 	l.openSettings()
 	m := l.settings
 
-	// rows: appearance, date, 5 display toggles, worktree-path cycle, 7 themes.
-	if len(m.rows) != 15 {
-		t.Fatalf("branch view has %d rows, want 15", len(m.rows))
+	// rows: appearance, date, 6 display toggles (incl. pr), worktree-path cycle, 7 themes.
+	if len(m.rows) != 16 {
+		t.Fatalf("branch view has %d rows, want 16", len(m.rows))
 	}
 	if m.rows[0].kind != settingsRowCycle || m.rows[0].section != "Appearance" {
 		t.Errorf("rows[0] = %+v, want Appearance cycle row", m.rows[0])
@@ -298,11 +300,11 @@ func TestSettingsModelBranchViewSections(t *testing.T) {
 			t.Errorf("rows[2+%d] = %+v, want Display toggle %q", i, r, title)
 		}
 	}
-	wt := m.rows[7]
+	wt := m.rows[8]
 	if wt.kind != settingsRowCycle || wt.section != "WorktreePath" || len(wt.options) != 3 {
-		t.Errorf("rows[7] = %+v, want WorktreePath cycle with 3 options", wt)
+		t.Errorf("rows[8] = %+v, want WorktreePath cycle with 3 options", wt)
 	}
-	for i := 8; i < 15; i++ {
+	for i := 9; i < 16; i++ {
 		if m.rows[i].kind != settingsRowTheme {
 			t.Errorf("rows[%d] = %+v, want theme row", i, m.rows[i])
 		}
@@ -384,8 +386,8 @@ func TestSettingsModelToggleHiddenColumnLiveAndRevert(t *testing.T) {
 	ApplySettings(&Settings{Appearance: "dark", Theme: "default"})
 
 	l := newSettingsList("branch", branchDemoColumns())
-	if len(l.visibleColumns()) != 5 {
-		t.Fatalf("initial visible columns = %d, want 5", len(l.visibleColumns()))
+	if len(l.visibleColumns()) != 6 {
+		t.Fatalf("initial visible columns = %d, want 6", len(l.visibleColumns()))
 	}
 	l.openSettings()
 	m := l.settings
@@ -396,8 +398,8 @@ func TestSettingsModelToggleHiddenColumnLiveAndRevert(t *testing.T) {
 	if !activeBranchHidden["branch"] {
 		t.Errorf("activeBranchHidden after toggle = %v, want 'branch' hidden", activeBranchHidden)
 	}
-	if len(l.visibleColumns()) != 4 {
-		t.Errorf("live visible columns = %d, want 4 (branch hidden)", len(l.visibleColumns()))
+	if len(l.visibleColumns()) != 5 {
+		t.Errorf("live visible columns = %d, want 5 (branch hidden)", len(l.visibleColumns()))
 	}
 
 	// Second toggle: "last commit".
@@ -406,8 +408,8 @@ func TestSettingsModelToggleHiddenColumnLiveAndRevert(t *testing.T) {
 	if !activeBranchHidden["last commit"] {
 		t.Errorf("activeBranchHidden after 2nd toggle = %v, want 'last commit' hidden", activeBranchHidden)
 	}
-	if len(l.visibleColumns()) != 3 {
-		t.Errorf("live visible columns = %d, want 3", len(l.visibleColumns()))
+	if len(l.visibleColumns()) != 4 {
+		t.Errorf("live visible columns = %d, want 4", len(l.visibleColumns()))
 	}
 
 	// Esc reverts everything live.
@@ -415,8 +417,8 @@ func TestSettingsModelToggleHiddenColumnLiveAndRevert(t *testing.T) {
 	if len(activeBranchHidden) != 0 {
 		t.Errorf("activeBranchHidden after revert = %v, want empty", activeBranchHidden)
 	}
-	if len(l.visibleColumns()) != 5 {
-		t.Errorf("visible columns after revert = %d, want 5", len(l.visibleColumns()))
+	if len(l.visibleColumns()) != 6 {
+		t.Errorf("visible columns after revert = %d, want 6", len(l.visibleColumns()))
 	}
 }
 
@@ -433,7 +435,7 @@ func TestHiddenColumnsKeepCellAlignment(t *testing.T) {
 		HiddenColumns: func() map[string]bool {
 			// Hide everything except "last commit" — the buggy screenshot's
 			// exact state.
-			return map[string]bool{"branch": true, "date": true, "author": true, "worktree": true}
+			return map[string]bool{"branch": true, "date": true, "author": true, "worktree": true, "pr": true}
 		},
 	})
 
@@ -466,8 +468,8 @@ func TestSettingsModelWorktreePathCycleLiveAndRevert(t *testing.T) {
 	if m.worktreePathFormat != "shortest" || activeWorktreePathFormat != "shortest" {
 		t.Fatalf("initial worktree format = %q (active %q), want shortest", m.worktreePathFormat, activeWorktreePathFormat)
 	}
-	m.cursor = 7 // worktree-path cycle row
-	m.activate(7, 1)
+	m.cursor = 8 // worktree-path cycle row
+	m.activate(8, 1)
 	if m.worktreePathFormat != "relative" || activeWorktreePathFormat != "relative" {
 		t.Errorf("after right-cycle = %q (active %q), want relative", m.worktreePathFormat, activeWorktreePathFormat)
 	}
@@ -495,8 +497,8 @@ func TestSettingsModelSavePersistsNewFields(t *testing.T) {
 	m.activate(2, 1)
 	m.cursor = 3 // "last commit" toggle
 	m.activate(3, 1)
-	m.cursor = 7     // worktree-path cycle
-	m.activate(7, 1) // → relative
+	m.cursor = 8     // worktree-path cycle
+	m.activate(8, 1) // → relative
 
 	m.Update(keyRunes('s'))
 	if m.state != settingsApplied {

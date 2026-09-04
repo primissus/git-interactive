@@ -22,7 +22,11 @@ func filterItems(query string, items []Item) []int {
 
 	values := make([]string, len(items))
 	for i, it := range items {
-		values[i] = it.FilterValue()
+		if s, ok := it.(Searchable); ok {
+			values[i] = s.SearchValue()
+		} else {
+			values[i] = it.FilterValue()
+		}
 	}
 
 	matches := fuzzy.Find(q, values)

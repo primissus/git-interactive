@@ -454,3 +454,111 @@ func TestSettingsAppliesThemeAndSaves(t *testing.T) {
 		t.Errorf("persisted Theme = %q, want %q", s.Theme, "gruvbox")
 	}
 }
+
+// --- ConfirmFrom (phase 15) ------------------------------------------------
+
+func TestConfirmFromFiresWhenNonNil(t *testing.T) {
+	l := New(Config{Columns: DemoColumns(), Items: DemoItems()})
+	op := Operation{
+		Name:        "maybe",
+		ConfirmFrom: func(items []Item) *Confirm { return &Confirm{Kind: ConfirmYesNo, Prompt: "sure?"} },
+		Run:         func(c OpContext) tea.Cmd { return Status("ran") },
+	}
+	l.runConfirm(op, l.targetItems(), "")
+	if l.mode != modeConfirm {
+		t.Fatalf("mode = %v, want modeConfirm when ConfirmFrom returns non-nil", l.mode)
+	}
+}
+
+func TestConfirmFromNilSkipsPrompt(t *testing.T) {
+	l := New(Config{Columns: DemoColumns(), Items: DemoItems()})
+	ran := false
+	op := Operation{
+		Name:        "always",
+		ConfirmFrom: func(items []Item) *Confirm { return nil },
+		Run:         func(c OpContext) tea.Cmd { ran = true; return nil },
+	}
+	l.runConfirm(op, l.targetItems(), "")
+	if l.mode == modeConfirm {
+		t.Fatalf("mode = modeConfirm, want no prompt when ConfirmFrom returns nil")
+	}
+	if !ran {
+		t.Fatalf("Run was not called when ConfirmFrom returns nil")
+	}
+}
+
+func TestConfirmFromOverridesStaticConfirm(t *testing.T) {
+	l := New(Config{Columns: DemoColumns(), Items: DemoItems()})
+	ran := false
+	op := Operation{
+		Name:        "both",
+		Confirm:     &Confirm{Kind: ConfirmYesNo, Prompt: "static"},
+		ConfirmFrom: func(items []Item) *Confirm { return nil }, // overrides Confirm entirely
+		Run:         func(c OpContext) tea.Cmd { ran = true; return nil },
+	}
+	l.runConfirm(op, l.targetItems(), "")
+	if !ran {
+		t.Fatalf("ConfirmFrom returning nil should override a static Confirm and run immediately")
+	}
+}
+
+// --- InitCmd (phase 15) ----------------------------------------------------
+
+func TestInitReturnsNilWithNoInitCmdOrOpenMenu(t *testing.T) {
+	l := New(Config{Columns: DemoColumns(), Items: DemoItems()})
+	if cmd := l.Init(); cmd != nil {
+		t.Errorf("Init() = non-nil, want nil when neither OpenMenuOnStart nor InitCmd is set")
+	}
+}
+
+func TestInitRunsInitCmdAlone(t *testing.T) {
+	l := New(Config{
+		Columns: DemoColumns(),
+		Items:   DemoItems(),
+		InitCmd: func() tea.Msg { return statusMsg("loaded") },
+	})
+	cmd := l.Init()
+	if cmd == nil {
+		t.Fatal("Init() = nil, want InitCmd's cmd")
+	}
+	if msg := cmd(); msg != statusMsg("loaded") {
+		t.Errorf("Init() cmd produced %v, want statusMsg(\"loaded\")", msg)
+	}
+}
+
+func TestInitBatchesInitCmdWithOpenMenuBlink(t *testing.T) {
+	l := New(Config{
+		Columns:         DemoColumns(),
+		Items:           DemoItems(),
+		OpenMenuOnStart: true,
+		InitCmd:         func() tea.Msg { return statusMsg("from-init") },
+	})
+	cmd := l.Init()
+	if cmd == nil {
+		t.Fatal("Init() = nil, want a batched cmd")
+	}
+	// Direct-menu mode must still open regardless of InitCmd.
+	if l.mode != modeMenu {
+		t.Errorf("mode = %v, want modeMenu (direct-menu mode unaffected by InitCmd)", l.mode)
+	}
+}
+
+// TestInitCmdMessageReachesSetItems verifies a message produced by InitCmd —
+// the shape the branch/worktree views' background PR fetch uses via
+// tui.SetItems(items)() — flows through List.Update like any other itemsMsg.
+func TestInitCmdMessageReachesSetItems(t *testing.T) {
+	want := []Item{demoRow{name: "from-init"}}
+	l := New(Config{
+		Columns: DemoColumns(),
+		Items:   DemoItems(),
+		InitCmd: SetItems(want),
+	})
+	cmd := l.Init()
+	if cmd == nil {
+		t.Fatal("Init() = nil, want InitCmd's cmd")
+	}
+	l.Update(cmd())
+	if len(l.items) != 1 || l.items[0].FilterValue() != "from-init" {
+		t.Fatalf("items after InitCmd = %v, want [from-init]", l.items)
+	}
+}

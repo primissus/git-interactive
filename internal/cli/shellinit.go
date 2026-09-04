@@ -48,7 +48,7 @@ const posixShellInit = `# gint shell integration — add to your ~/.bashrc or ~/
 #   eval "$(gint shell-init zsh)"
 gint() {
 	case "$1" in
-	worktree | wt)
+	worktree | wt | branch | br)
 		local _gint_cd_file _gint_ret
 		_gint_cd_file="$(mktemp "${TMPDIR:-/tmp}/gint-cd.XXXXXX")"
 		command gint "$@" --cd-file "$_gint_cd_file"
@@ -70,7 +70,7 @@ const fishShellInit = `# gint shell integration — add to your ~/.config/fish/c
 #   gint shell-init fish | source
 function gint
 	switch "$argv[1]"
-	case worktree wt
+	case worktree wt branch br
 		set -l _gint_cd_file (mktemp (test -n "$TMPDIR"; and echo $TMPDIR; or echo /tmp)/gint-cd.XXXXXX)
 		command gint $argv --cd-file $_gint_cd_file
 		set -l _gint_ret $status

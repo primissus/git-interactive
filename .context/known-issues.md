@@ -18,6 +18,16 @@
 - **Real cause:** `git <op> --continue` opens `$EDITOR` for the (already-prepared) message by default, which blocks the alt-screen.
 - **Fix:** `InProgressState.Continue` runs with `GIT_EDITOR=true`/`GIT_SEQUENCE_EDITOR=true`, so git keeps the prepared message and returns immediately.
 
+## tree grouping silently dropped a leaf branch's worktree/PR data
+- **Happens when:** tree view (`T`) is on in `gint br` and a leaf row's worktree or PR column is checked.
+- **Real cause:** `treeNode.insert` rebuilt each leaf as `branchItem{b: b.b, merged: b.merged}` instead of keeping the item it was handed, silently dropping `wtPath`/`cwd`/`pr` — the worktree column blanked under grouping, and would have blanked the new `pr` column too.
+- **Fix:** `insert` appends the passed-in item as-is; `flatten` sets only `displayName` on its local copy (PROMPT.md → `branch` tree grouping; `.context/decisions.md`).
+
+## the PR column and "open PR" operation are silent by design
+- **Happens when:** `gh` isn't on PATH, the repo has no GitHub remote, `gh auth login` was never run, or `gh pr list`/`gh pr view` otherwise fails.
+- **Real cause:** intentional — see `.context/decisions.md` "PR data is best-effort everywhere, never an error". `gh.PRsByBranch` returns `nil` on any failure, which reads as an empty map.
+- **Fix:** nothing to fix — an empty `pr` column with no error is the correct behavior. If a PR you expect to see isn't showing, check `gh auth status` and `gh pr list` directly, not gint.
+
 ## Things that look broken but are intentional
 - `-i/--interactive` being the default means bare `gint <cmd>` opens a TUI — scripts must pass `-I`.
 - `merge` ignores `-I` and always confirms (it's a one-shot wizard with no tabular form — see decisions). `-S` is attached to every command but only `branch` reorders by it; `stash` binds `p` to pop, not pull. All intentional (phase-8 audit).

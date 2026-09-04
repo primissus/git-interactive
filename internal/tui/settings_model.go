@@ -33,7 +33,7 @@ var worktreePathFormats = []string{"shortest", "relative", "absolute"}
 // branchColumnTitles / logColumnTitles are the column titles the branch and
 // log views' Display sections can hide, in column order. They must match the
 // Column.Title values the commands build, since hiding filters by title.
-var branchColumnTitles = []string{"branch", "last commit", "date", "author", "worktree"}
+var branchColumnTitles = []string{"branch", "last commit", "date", "author", "worktree", "pr"}
 
 var logColumnTitles = []string{"sha", "message", "date", "author", "branches", "worktree"}
 

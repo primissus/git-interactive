@@ -9,6 +9,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"git-interact/internal/gh"
 	"git-interact/internal/git"
 	"git-interact/internal/tui"
 )
@@ -135,7 +136,7 @@ func TestBranchRebaseOpSetsState(t *testing.T) {
 	ctx := context.Background()
 	state := &branchViewState{}
 
-	items, err := loadBranchItems(ctx, r, branchFilters{}, "last-commit", true)
+	items, err := loadBranchItems(ctx, r, branchFilters{}, "last-commit", true, nil)
 	if err != nil {
 		t.Fatalf("loadBranchItems: %v", err)
 	}
@@ -178,7 +179,7 @@ func TestBranchRebaseOpGuardCurrentBranch(t *testing.T) {
 	ctx := context.Background()
 	state := &branchViewState{}
 
-	items, err := loadBranchItems(ctx, r, branchFilters{}, "last-commit", true)
+	items, err := loadBranchItems(ctx, r, branchFilters{}, "last-commit", true, nil)
 	if err != nil {
 		t.Fatalf("loadBranchItems: %v", err)
 	}
@@ -214,11 +215,97 @@ func TestBranchRebaseOpGuardCurrentBranch(t *testing.T) {
 func TestBranchItemWorktreeColumn(t *testing.T) {
 	bi := branchItem{b: git.Branch{Name: "main"}, wtPath: "/home/u/proj", cwd: "/home/u"}
 	cols := bi.Columns()
-	if len(cols) != 5 {
-		t.Fatalf("branchItem.Columns() = %v, want 5 cells", cols)
+	if len(cols) != 6 {
+		t.Fatalf("branchItem.Columns() = %v, want 6 cells", cols)
 	}
 	if cols[4] != "proj" {
 		t.Errorf("worktree cell = %q, want %q (shortest)", cols[4], "proj")
+	}
+}
+
+// TestBranchItemPRColumn verifies the 6th cell renders the PR number and
+// state, empty when the row has no open PR.
+func TestBranchItemPRColumn(t *testing.T) {
+	none := branchItem{b: git.Branch{Name: "main"}}
+	if cols := none.Columns(); cols[5] != "" {
+		t.Errorf("PR cell for no PR = %q, want empty", cols[5])
+	}
+
+	open := branchItem{b: git.Branch{Name: "feature"}, pr: gh.PR{Number: 412, IsDraft: false}}
+	if cols := open.Columns(); cols[5] != "#412 open" {
+		t.Errorf("PR cell = %q, want %q", cols[5], "#412 open")
+	}
+
+	draft := branchItem{b: git.Branch{Name: "wip"}, pr: gh.PR{Number: 413, IsDraft: true}}
+	if cols := draft.Columns(); cols[5] != "#413 draft" {
+		t.Errorf("PR cell = %q, want %q", cols[5], "#413 draft")
+	}
+}
+
+// TestBranchItemSearchValueIncludesWorktreeAndPR verifies SearchValue (not
+// FilterValue, which stays the branch name for batch-op labels) widens the
+// fuzzy filter to the formatted worktree path and the PR number.
+func TestBranchItemSearchValueIncludesWorktreeAndPR(t *testing.T) {
+	bi := branchItem{b: git.Branch{Name: "feature"}, wtPath: "/home/u/proj", cwd: "/home/u", pr: gh.PR{Number: 412}}
+	sv := bi.SearchValue()
+	for _, want := range []string{"feature", "proj", "#412"} {
+		if !strings.Contains(sv, want) {
+			t.Errorf("SearchValue() = %q, want it to contain %q", sv, want)
+		}
+	}
+	if bi.FilterValue() != "feature" {
+		t.Errorf("FilterValue() = %q, want unchanged branch name %q", bi.FilterValue(), "feature")
+	}
+}
+
+// TestCheckoutConfirmFiresOnlyForOtherWorktree verifies the checkout op's
+// ConfirmFrom prompts only when the target is checked out elsewhere, not for
+// the current branch or a branch with no worktree at all.
+func TestCheckoutConfirmFiresOnlyForOtherWorktree(t *testing.T) {
+	elsewhere := branchItem{b: git.Branch{Name: "feature"}, wtPath: "/home/u/other"}
+	if c := checkoutConfirm([]tui.Item{elsewhere}); c == nil {
+		t.Fatal("checkoutConfirm(branch checked out elsewhere) = nil, want a prompt")
+	}
+
+	here := branchItem{b: git.Branch{Name: "main", Head: true}, wtPath: "/home/u/other"}
+	if c := checkoutConfirm([]tui.Item{here}); c != nil {
+		t.Errorf("checkoutConfirm(current branch) = %+v, want nil", c)
+	}
+
+	noWT := branchItem{b: git.Branch{Name: "feature"}}
+	if c := checkoutConfirm([]tui.Item{noWT}); c != nil {
+		t.Errorf("checkoutConfirm(no worktree) = %+v, want nil", c)
+	}
+}
+
+// TestCheckoutOpSetsCDPath verifies the "checkout" op's Run stores the target
+// worktree's path and quits, rather than running git checkout, when the
+// confirm resolved to "cd" (the prompt fired and the user chose to move).
+func TestCheckoutOpSetsCDPath(t *testing.T) {
+	r := newTestRepo(t)
+	commitFile(t, r, "a", "a", "first commit")
+	state := &branchViewState{}
+	target := branchItem{b: git.Branch{Name: "feature"}, wtPath: "/home/u/other"}
+
+	ops := buildBranchOperations(context.Background(), r, branchFilters{}, state, true)
+	var op tui.Operation
+	for _, o := range ops {
+		if o.Name == "checkout" {
+			op = o
+		}
+	}
+	if op.Run == nil {
+		t.Fatal(`"checkout" operation not found`)
+	}
+	cmd := op.Run(tui.OpContext{Items: []tui.Item{target}, Choice: "cd"})
+	if state.cdPath != "/home/u/other" {
+		t.Errorf("state.cdPath = %q, want %q", state.cdPath, "/home/u/other")
+	}
+	if cmd == nil {
+		t.Fatal("command is nil, want tea.Quit")
+	}
+	if _, ok := cmd().(tea.QuitMsg); !ok {
+		t.Fatal("command msg is not tea.QuitMsg")
 	}
 }
 
@@ -244,5 +331,8 @@ func TestBranchHiddenColumnsNotInRenderTable(t *testing.T) {
 	}
 	if !strings.Contains(b.String(), "worktree") {
 		t.Error("-I output missing the worktree column header")
+	}
+	if !strings.Contains(b.String(), "pr") {
+		t.Error("-I output missing the pr column header")
 	}
 }

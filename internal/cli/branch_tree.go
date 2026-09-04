@@ -22,7 +22,7 @@ func (g branchGroupItem) Columns() []string {
 		marker = "▸"
 	}
 	indent := strings.Repeat("  ", g.depth)
-	return []string{fmt.Sprintf("%s%s %s (%d)", indent, marker, g.label, g.count), "", "", ""}
+	return []string{fmt.Sprintf("%s%s %s (%d)", indent, marker, g.label, g.count), "", "", "", "", ""}
 }
 
 func (g branchGroupItem) FilterValue() string { return "" }
@@ -40,7 +40,7 @@ func (n *treeNode) insert(path string, b branchItem) {
 	n.count++
 	idx := strings.Index(path, "/")
 	if idx < 0 {
-		n.branches = append(n.branches, branchItem{b: b.b, merged: b.merged})
+		n.branches = append(n.branches, b)
 		return
 	}
 	dirName := path[:idx]

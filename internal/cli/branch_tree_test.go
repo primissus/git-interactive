@@ -3,6 +3,7 @@ package cli
 import (
 	"testing"
 
+	"git-interact/internal/gh"
 	"git-interact/internal/git"
 	"git-interact/internal/tui"
 )
@@ -265,13 +266,34 @@ func TestBranchGroupItemCollapsedMarker(t *testing.T) {
 func TestBranchGroupItemColumnsPadding(t *testing.T) {
 	g := branchGroupItem{label: "test/", count: 5, depth: 0}
 	cols := g.Columns()
-	if len(cols) != 4 {
-		t.Fatalf("Columns should return 4 entries, got %d", len(cols))
+	if len(cols) != 6 {
+		t.Fatalf("Columns should return 6 entries (matching the 6-column branch table), got %d", len(cols))
 	}
-	for i := 1; i < 4; i++ {
+	for i := 1; i < 6; i++ {
 		if cols[i] != "" {
 			t.Errorf("cols[%d] = %q, want empty", i, cols[i])
 		}
+	}
+}
+
+// TestApplyGroupingPreservesWorktreeAndPR is the regression test for the p15
+// bug where grouping rebuilt each leaf branchItem as branchItem{b, merged},
+// silently dropping wtPath/cwd/pr and blanking those columns whenever tree
+// view was on.
+func TestApplyGroupingPreservesWorktreeAndPR(t *testing.T) {
+	b := branchItem{b: git.Branch{Name: "feature/x"}, wtPath: "/home/u/wt", cwd: "/home/u", pr: gh.PR{Number: 7}}
+	items := itemsFromBranches([]branchItem{b})
+	grouped := applyGrouping(items, nil)
+
+	if len(grouped) != 2 { // group header + leaf
+		t.Fatalf("grouped = %d items, want 2", len(grouped))
+	}
+	leaf, ok := grouped[1].(branchItem)
+	if !ok {
+		t.Fatalf("grouped[1] = %T, want branchItem", grouped[1])
+	}
+	if leaf.wtPath != "/home/u/wt" || leaf.pr.Number != 7 {
+		t.Errorf("grouped leaf lost wtPath/pr: %+v", leaf)
 	}
 }
 
