@@ -280,7 +280,6 @@ func (m *settingsModel) activate(rowIdx, dir int) {
 		m.activeTheme = themes[row.themeIndex].Name
 		m.preview()
 	}
-	return
 }
 
 // cycleRow advances a cycle row's option by dir, previewing on change.
