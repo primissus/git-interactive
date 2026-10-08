@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"maps"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -208,9 +209,7 @@ func (m *settingsModel) buildRows(view string) []settingsRow {
 // cloneHidden snapshots a hidden-column set so Esc can restore it.
 func cloneHidden(set map[string]bool) map[string]bool {
 	out := make(map[string]bool, len(set))
-	for k, v := range set {
-		out[k] = v
-	}
+	maps.Copy(out, set)
 	return out
 }
 

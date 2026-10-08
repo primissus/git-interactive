@@ -77,7 +77,7 @@ func MergedBranches(ctx context.Context, r *Runner) (map[string]bool, error) {
 		return nil, err
 	}
 	set := map[string]bool{}
-	for _, line := range strings.Split(out, "\n") {
+	for line := range strings.SplitSeq(out, "\n") {
 		line = strings.TrimSpace(line)
 		if line != "" {
 			set[line] = true
@@ -114,8 +114,7 @@ func BranchExists(ctx context.Context, r *Runner, name string) (bool, error) {
 	if err == nil {
 		return true, nil
 	}
-	var gitErr *Error
-	if errors.As(err, &gitErr) {
+	if _, ok := errors.AsType[*Error](err); ok {
 		return false, nil
 	}
 	return false, err

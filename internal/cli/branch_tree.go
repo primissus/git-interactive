@@ -38,13 +38,13 @@ type treeNode struct {
 
 func (n *treeNode) insert(path string, b branchItem) {
 	n.count++
-	idx := strings.Index(path, "/")
-	if idx < 0 {
+	before, after, ok := strings.Cut(path, "/")
+	if !ok {
 		n.branches = append(n.branches, b)
 		return
 	}
-	dirName := path[:idx]
-	rest := path[idx+1:]
+	dirName := before
+	rest := after
 	for _, child := range n.dirs {
 		if child.name == dirName {
 			child.insert(rest, b)

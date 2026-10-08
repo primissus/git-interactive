@@ -79,8 +79,7 @@ func TagExists(ctx context.Context, r *Runner, name string) (bool, error) {
 	if err == nil {
 		return true, nil
 	}
-	var gitErr *Error
-	if errors.As(err, &gitErr) {
+	if _, ok := errors.AsType[*Error](err); ok {
 		return false, nil
 	}
 	return false, err

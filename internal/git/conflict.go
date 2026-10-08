@@ -136,7 +136,7 @@ func currentLabel(ctx context.Context, r *Runner) string {
 // MERGE_MSG ("Merge branch 'x'") and falling back to MERGE_HEAD's name.
 func mergeTheirs(ctx context.Context, r *Runner) string {
 	if msg, err := readGitFile(ctx, r, "MERGE_MSG"); err == nil {
-		first := strings.SplitN(msg, "\n", 2)[0]
+		first, _, _ := strings.Cut(msg, "\n")
 		if name := branchFromMergeMsg(first); name != "" {
 			return name
 		}
@@ -215,7 +215,7 @@ func ConflictedFiles(ctx context.Context, r *Runner) ([]string, error) {
 		return nil, err
 	}
 	var files []string
-	for _, line := range strings.Split(out, "\n") {
+	for line := range strings.SplitSeq(out, "\n") {
 		if line = strings.TrimSpace(line); line != "" {
 			files = append(files, line)
 		}

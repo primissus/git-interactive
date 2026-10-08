@@ -114,10 +114,9 @@ func ShortDate(unix int64, now time.Time) string {
 	if unix == 0 {
 		return ""
 	}
-	diff := now.Unix() - unix
-	if diff < 0 {
-		diff = 0 // don't display future dates as "now"
-	}
+	diff := max(now.Unix()-unix,
+		// don't display future dates as "now"
+		0)
 	switch {
 	case diff < 60:
 		return "now"

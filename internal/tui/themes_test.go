@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/charmbracelet/lipgloss"
@@ -21,10 +22,8 @@ func TestThemeByName(t *testing.T) {
 // TestThemeNamesIncludesDefault guards the revert option — "default" must stay
 // in the list so users can roll back from a chosen theme via the settings menu.
 func TestThemeNamesIncludesDefault(t *testing.T) {
-	for _, n := range ThemeNames() {
-		if n == "default" {
-			return
-		}
+	if slices.Contains(ThemeNames(), "default") {
+		return
 	}
 	t.Error(`ThemeNames() = [...] missing "default" — users can't roll back`)
 }

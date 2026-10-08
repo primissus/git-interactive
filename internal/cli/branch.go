@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"maps"
 	"os"
 	"sort"
 	"strconv"
@@ -562,9 +563,7 @@ func (s *branchViewState) toggleCollapsed(prefix string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	next := make(map[string]bool, len(s.collapsed)+1)
-	for k, v := range s.collapsed {
-		next[k] = v
-	}
+	maps.Copy(next, s.collapsed)
 	next[prefix] = !next[prefix]
 	s.collapsed = next
 }

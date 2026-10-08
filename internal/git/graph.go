@@ -49,13 +49,13 @@ func parseGraph(out string) []GraphRow {
 	lines := strings.Split(out, "\n")
 	rows := make([]GraphRow, 0, len(lines))
 	for _, line := range lines {
-		idx := strings.Index(line, graphSentinel)
-		if idx == -1 {
+		before, after, ok := strings.Cut(line, graphSentinel)
+		if !ok {
 			rows = append(rows, GraphRow{Prefix: line})
 			continue
 		}
-		prefix := line[:idx]
-		fields := strings.Split(line[idx+len(graphSentinel):], "\x1f")
+		prefix := before
+		fields := strings.Split(after, "\x1f")
 		for len(fields) < 7 {
 			fields = append(fields, "")
 		}

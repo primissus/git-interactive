@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -68,7 +69,7 @@ func ChangedFiles(ctx context.Context, r *Runner, sha string) ([]string, error) 
 		return nil, err
 	}
 	var files []string
-	for _, line := range strings.Split(out, "\n") {
+	for line := range strings.SplitSeq(out, "\n") {
 		if line = strings.TrimSpace(line); line != "" {
 			files = append(files, line)
 		}
@@ -122,8 +123,8 @@ func RunRebasePlan(ctx context.Context, r *Runner, plan RebasePlan, steps []Reba
 // fold into.
 func ValidateRebaseSteps(steps []RebaseStep) error {
 	dropped := 0
-	for i := len(steps) - 1; i >= 0; i-- {
-		s := steps[i]
+	for _, s := range slices.Backward(steps) {
+
 		if s.Op == RebaseDrop {
 			dropped++
 			continue
