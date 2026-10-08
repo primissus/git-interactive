@@ -222,33 +222,33 @@ func setHiddenVal(set map[string]bool, title string, hidden bool) {
 	}
 }
 
-// Update advances the overlay. Returns nil (no commands).
-func (m *settingsModel) Update(msg tea.Msg) tea.Cmd {
+// Update advances the overlay.
+func (m *settingsModel) Update(msg tea.Msg) {
 	key, ok := msg.(tea.KeyMsg)
 	if !ok {
-		return nil
+		return
 	}
 	switch key.String() {
 	case "esc", "ctrl+c":
 		m.revert()
 		m.state = settingsCanceled
-		return nil
+		return
 	case "up", "k":
 		if m.cursor > 0 {
 			m.cursor--
 		}
-		return nil
+		return
 	case "down", "j":
 		if m.cursor < len(m.rows)-1 {
 			m.cursor++
 		}
-		return nil
+		return
 	case "left", "h":
-		return m.activate(m.cursor, -1)
+		m.activate(m.cursor, -1)
 	case "right", "l":
-		return m.activate(m.cursor, 1)
+		m.activate(m.cursor, 1)
 	case "enter", " ":
-		return m.activate(m.cursor, 1)
+		m.activate(m.cursor, 1)
 	case "s":
 		m.saveErr = SaveSettings(&Settings{
 			Appearance:          m.appearance,
@@ -261,15 +261,14 @@ func (m *settingsModel) Update(msg tea.Msg) tea.Cmd {
 			LogHiddenColumns:    hiddenToList(activeLogHidden),
 		})
 		m.state = settingsApplied
-		return nil
+		return
 	}
-	return nil
 }
 
 // activate drives the row at cursor in direction dir: cycle rows cycle their
 // options, toggle rows flip their bool (direction-agnostic), theme rows select
 // the theme.
-func (m *settingsModel) activate(rowIdx, dir int) tea.Cmd {
+func (m *settingsModel) activate(rowIdx, dir int) {
 	row := m.rows[rowIdx]
 	switch row.kind {
 	case settingsRowCycle:
@@ -281,7 +280,7 @@ func (m *settingsModel) activate(rowIdx, dir int) tea.Cmd {
 		m.activeTheme = themes[row.themeIndex].Name
 		m.preview()
 	}
-	return nil
+	return
 }
 
 // cycleRow advances a cycle row's option by dir, previewing on change.

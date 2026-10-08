@@ -1,12 +1,14 @@
 package cli
 
 import (
+	"context"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"git-interact/internal/gh"
 	"git-interact/internal/git"
+	"git-interact/internal/tui"
 )
 
 func TestShortSHA(t *testing.T) {
@@ -55,5 +57,41 @@ func TestWorktreeItemSearchValueMatchesShortestPath(t *testing.T) {
 
 	if wi.FilterValue() != wtPath+" feature/x" {
 		t.Errorf("FilterValue() = %q, want unchanged raw path + branch", wi.FilterValue())
+	}
+}
+
+// TestBuildWorktreeOperations pins the operation list (names, keys, scopes)
+// so accidental removals or rebinds show up in review.
+func TestBuildWorktreeOperations(t *testing.T) {
+	r := newTestRepo(t)
+	var checkout string
+	ops := buildWorktreeOperations(context.Background(), r, &checkout, &worktreeViewState{})
+
+	want := []struct {
+		name  string
+		key   string
+		scope tui.Scope
+	}{
+		{"checkout", "C", tui.ScopeItem},
+		{"open pr", "", tui.ScopeItem},
+		{"delete", "D", tui.ScopeItem},
+		{"fetch", "f", tui.ScopeItem},
+		{"pull", "p", tui.ScopeItem},
+		{"push", "P", tui.ScopeItem},
+		{"rename branch", "R", tui.ScopeItem},
+		{"copy path", "y", tui.ScopeItem},
+		{"lock", "", tui.ScopeItem},
+		{"unlock", "", tui.ScopeItem},
+		{"new", "N", tui.ScopeList},
+		{"delete", "", tui.ScopeItem},
+		{"prune", "", tui.ScopeList},
+	}
+	if len(ops) != len(want) {
+		t.Fatalf("got %d operations, want %d", len(ops), len(want))
+	}
+	for i, w := range want {
+		if ops[i].Name != w.name || ops[i].Key != w.key || ops[i].Scope != w.scope {
+			t.Errorf("op %d = {%q %q %v}, want {%q %q %v}", i, ops[i].Name, ops[i].Key, ops[i].Scope, w.name, w.key, w.scope)
+		}
 	}
 }

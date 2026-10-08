@@ -298,11 +298,7 @@ func runWorktree(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	if checkoutPath != "" {
-		if cdFile != "" {
-			return os.WriteFile(cdFile, []byte(checkoutPath+"\n"), 0o644)
-		}
-		_, err := fmt.Fprintln(cmd.OutOrStdout(), checkoutPath)
-		return err
+		return emitCdPath(cmd, cdFile, checkoutPath)
 	}
 	return nil
 }

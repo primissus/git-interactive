@@ -728,7 +728,7 @@ func (l *List) openSettings() tea.Cmd {
 // the result via a Status line so the user gets feedback even after the overlay
 // closes. Returns nothing — the settings overlay has no blinking cursor.
 func (l *List) updateSettings(msg tea.Msg) {
-	_ = l.settings.Update(msg)
+	l.settings.Update(msg)
 	switch l.settings.state {
 	case settingsApplied:
 		l.mode = modeList

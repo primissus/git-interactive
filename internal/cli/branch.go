@@ -402,11 +402,7 @@ func runBranch(cmd *cobra.Command, args []string) error {
 		if state.cdPath != "" {
 			path := state.cdPath
 			state.cdPath = ""
-			if cdFile != "" {
-				return os.WriteFile(cdFile, []byte(path+"\n"), 0o644)
-			}
-			_, err := fmt.Fprintln(cmd.OutOrStdout(), path)
-			return err
+			return emitCdPath(cmd, cdFile, path)
 		}
 		reentered, err := runBranchRebaseHandoff(cmd, runner, state, flags)
 		if err != nil {
@@ -469,11 +465,7 @@ func runBranchDirectMenu(cmd *cobra.Command, r *git.Runner, name string, f branc
 		if state.cdPath != "" {
 			path := state.cdPath
 			state.cdPath = ""
-			if cdFile != "" {
-				return os.WriteFile(cdFile, []byte(path+"\n"), 0o644)
-			}
-			_, err := fmt.Fprintln(cmd.OutOrStdout(), path)
-			return err
+			return emitCdPath(cmd, cdFile, path)
 		}
 		reentered, err := runBranchRebaseHandoff(cmd, r, state, flags)
 		if err != nil {
@@ -948,4 +940,14 @@ func buildBranchOperations(ctx context.Context, r *git.Runner, f branchFilters, 
 			},
 		},
 	})
+}
+
+// emitCdPath hands the post-TUI cd target to the shell wrapper: written to
+// cdFile when set, otherwise printed to stdout.
+func emitCdPath(cmd *cobra.Command, cdFile, path string) error {
+	if cdFile != "" {
+		return os.WriteFile(cdFile, []byte(path+"\n"), 0o644)
+	}
+	_, err := fmt.Fprintln(cmd.OutOrStdout(), path)
+	return err
 }
