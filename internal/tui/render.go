@@ -271,7 +271,9 @@ func (l *List) rowPrefix(pos, itemIdx int, highlighted bool, rowStyle lipgloss.S
 	var dotFg lipgloss.TerminalColor
 	if current {
 		dot = "● "
-		dotFg = colorCurrent
+		if !highlighted {
+			dotFg = colorCurrent
+		}
 	}
 	prefix += styledCell(rowStyle, dotFg, current, dot)
 
@@ -284,7 +286,11 @@ func (l *List) rowPrefix(pos, itemIdx int, highlighted bool, rowStyle lipgloss.S
 	selected := l.selected[itemIdx]
 	if selected {
 		box = "[x] "
-		boxFg = colorAccent
+		// On the cursor row the background is colorAccent, so an accent fg
+		// would vanish; inherit the row's invert fg there (still bold).
+		if !highlighted {
+			boxFg = colorAccent
+		}
 	}
 	return prefix + styledCell(rowStyle, boxFg, selected, box)
 }
