@@ -89,7 +89,7 @@ parentheses.
 | `gint graph-branch` | `grb` | Graph of each branch's last commit. |
 | `gint rebase` | `reb` | Pick a per-commit operation (pick/reword/edit/squash/fixup/drop), then submit. Resumes an in-progress rebase and resolves conflicts inline. |
 | `gint merge` | `mrg` | Merge a branch: default / ff-only / no-ff / squash. Continues or aborts an in-progress merge. |
-| `gint status` | `st` | Working-tree status. Stage/unstage, diff, discard, stash, commit/amend. |
+| `gint status` | `st` | Working-tree status. Stage/unstage, diff, discard, restore (revert to HEAD), stash (stage/discard/restore also work on a multi-row selection), commit/amend. |
 | `gint add` | | Staging operations on changed files: stage/unstage (all), restore, clean. |
 | `gint stash` | `sth` | Browse stashes. Apply, pop, drop, show diff, create, clear all. |
 | `gint commit` | `cm` | Commit staged changes: message, then yes / amend / stage-all / commit-&-push / no-verify. |

@@ -118,7 +118,8 @@ Interactive status view. Reference implementation: `git-st.py` (see [Reference i
 
 - **Enter**: toggle stage/unstage for the selected file.
 - **Diff** (`d`): show the diff of the selected file.
-- **Discard**: discard changes to the selected file (typed confirmation).
+- **Discard**: discard unstaged changes to the selected file(s) (typed confirmation).
+- **Restore** (`R`): revert the selected file(s) to HEAD, dropping staged and unstaged changes (typed confirmation). Stage, discard and restore also accept a multi-row selection (select mode).
 - **Stash**: stash the selected file.
 - **Commit** (`c`): open the commit flow (see `commit`); `Shift+A` for amend.
 - During conflicts: continue / abort.

@@ -177,6 +177,13 @@ func DiscardFile(ctx context.Context, r *Runner, path string, untracked bool) er
 	return err
 }
 
+// RestoreFile reverts path to HEAD in both the index and the working tree
+// (`git restore --staged --worktree`), discarding staged and unstaged changes.
+func RestoreFile(ctx context.Context, r *Runner, path string) error {
+	_, err := r.Run(ctx, "restore", "--staged", "--worktree", "--", path)
+	return err
+}
+
 // CleanUntracked removes every untracked file (`git clean -fd`).
 func CleanUntracked(ctx context.Context, r *Runner) error {
 	_, err := r.Run(ctx, "clean", "-fd")

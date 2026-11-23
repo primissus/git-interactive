@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -130,6 +131,17 @@ func loadGroupedStatusItems(ctx context.Context, r *git.Runner) ([]tui.Item, err
 	return items, nil
 }
 
+// statusEntries returns the file rows among items (headers are skipped).
+func statusEntries(items []tui.Item) []statusItem {
+	var out []statusItem
+	for _, it := range items {
+		if s, ok := it.(statusItem); ok {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
 func targetStatusEntry(items []tui.Item) (statusItem, bool) {
 	if len(items) != 1 {
 		return statusItem{}, false
@@ -207,23 +219,25 @@ func buildStatusOperations(ctx context.Context, r *git.Runner) []tui.Operation {
 			// view relies on that). "toggle stage" is listed first in the
 			// menu (reachable via Enter → Enter) and also bound to a direct
 			// shortcut key; see .context/decisions.md.
-			Name: "toggle stage", Key: "a", Scope: tui.ScopeItem,
+			Name: "toggle stage", Key: "a", Scope: tui.ScopeItem, Bulk: true,
 			Run: func(c tui.OpContext) tea.Cmd {
-				s, ok := targetStatusEntry(c.Items)
-				if !ok {
+				entries := statusEntries(c.Items)
+				if len(entries) == 0 {
 					return tui.Status("select a file first")
 				}
-				if s.conflict {
-					return tui.Status("resolve the conflict before staging")
-				}
-				var err error
-				if s.staged {
-					err = git.UnstageFile(ctx, r, s.e.Path)
-				} else {
-					err = git.StageFile(ctx, r, s.e.Path)
-				}
-				if err != nil {
-					return tui.Status(err.Error())
+				for _, s := range entries {
+					if s.conflict {
+						return tui.Status("resolve the conflict before staging")
+					}
+					var err error
+					if s.staged {
+						err = git.UnstageFile(ctx, r, s.e.Path)
+					} else {
+						err = git.StageFile(ctx, r, s.e.Path)
+					}
+					if err != nil {
+						return tui.Status(err.Error())
+					}
 				}
 				return refresh()
 			},
@@ -246,17 +260,26 @@ func buildStatusOperations(ctx context.Context, r *git.Runner) []tui.Operation {
 			},
 		},
 		{
-			Name: "discard", Key: "D", Scope: tui.ScopeItem,
-			Confirm: &tui.Confirm{Kind: tui.ConfirmTyped, Prompt: "Discard changes to this file?", Phrase: "discard"},
+			Name: "discard", Key: "D", Scope: tui.ScopeItem, Bulk: true,
+			Confirm: &tui.Confirm{Kind: tui.ConfirmTyped, Prompt: "Discard unstaged changes to the selected file(s)?", Phrase: "discard"},
 			Run: func(c tui.OpContext) tea.Cmd {
-				s, ok := targetStatusEntry(c.Items)
-				if !ok {
-					return tui.Status("select a file first")
-				}
-				if err := git.DiscardFile(ctx, r, s.e.Path, s.untracked); err != nil {
-					return tui.Status(err.Error())
-				}
-				return refreshWith("discarded " + s.e.Path)
+				return forEachStatusFile(c.Items, "discarded", refreshWith, func(s statusItem) error {
+					return git.DiscardFile(ctx, r, s.e.Path, s.untracked)
+				})
+			},
+		},
+		{
+			// Unlike discard (worktree only), restore reverts to HEAD, dropping
+			// staged changes too.
+			Name: "restore", Key: "R", Scope: tui.ScopeItem, Bulk: true,
+			Confirm: &tui.Confirm{Kind: tui.ConfirmTyped, Prompt: "Revert the selected file(s) to HEAD (staged + unstaged)?", Phrase: "restore"},
+			Run: func(c tui.OpContext) tea.Cmd {
+				return forEachStatusFile(c.Items, "restored", refreshWith, func(s statusItem) error {
+					if s.untracked {
+						return git.DiscardFile(ctx, r, s.e.Path, true)
+					}
+					return git.RestoreFile(ctx, r, s.e.Path)
+				})
 			},
 		},
 		{
@@ -334,6 +357,21 @@ func buildStatusOperations(ctx context.Context, r *git.Runner) []tui.Operation {
 	}
 
 	return tui.ApplyKeymap("status", ops)
+}
+
+// forEachStatusFile applies fn to every file row in items, stopping at the
+// first error, then refreshes with a "<verb> N file(s)" status.
+func forEachStatusFile(items []tui.Item, verb string, refreshWith func(string) tea.Cmd, fn func(statusItem) error) tea.Cmd {
+	entries := statusEntries(items)
+	if len(entries) == 0 {
+		return tui.Status("select a file first")
+	}
+	for i, s := range entries {
+		if err := fn(s); err != nil {
+			return tui.Status(fmt.Sprintf("%s: %v (%d of %d %s)", s.e.Path, err, i, len(entries), verb))
+		}
+	}
+	return refreshWith(fmt.Sprintf("%s %d file(s)", verb, len(entries)))
 }
 
 // statusConflictPath resolves a status row to a conflicted file path for the

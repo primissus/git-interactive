@@ -165,6 +165,26 @@ func TestDiscardFile(t *testing.T) {
 	}
 }
 
+func TestRestoreFile(t *testing.T) {
+	r := newTestRepo(t)
+	writeFile(t, r, "a.txt", "one\n")
+	mustGit(t, r, "add", "a.txt")
+	mustGit(t, r, "commit", "-m", "init")
+	writeFile(t, r, "a.txt", "two\n")
+	mustGit(t, r, "add", "a.txt")
+	writeFile(t, r, "a.txt", "three\n")
+	if err := RestoreFile(context.Background(), r, "a.txt"); err != nil {
+		t.Fatal(err)
+	}
+	st, err := GetStatus(context.Background(), r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(st.Staged)+len(st.Unstaged) != 0 {
+		t.Errorf("after restore: staged=%v unstaged=%v, want clean", st.Staged, st.Unstaged)
+	}
+}
+
 func TestCleanUntracked(t *testing.T) {
 	ctx := context.Background()
 	r := newTestRepo(t)
